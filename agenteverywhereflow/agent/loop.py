@@ -21,8 +21,13 @@ from agenteverywhereflow.engine import get_engine
 class AgentLoop:
     """Orchestrates the autonomous perception-action loop on the chosen target."""
 
-    def __init__(self, app_config: AppConfig | None = None) -> None:
+    def __init__(
+        self,
+        app_config: AppConfig | None = None,
+        planner_func: Any | None = None,
+    ) -> None:
         self.config = app_config or config
+        self.planner_func = planner_func
         self.capturer = get_capturer()
         self.console = Console()
         self.client = OpenAI(
@@ -104,18 +109,32 @@ class AgentLoop:
             }
             messages.append(step_message)
 
-            # 3. Call Vision-LLM Planner
-            self.console.print("[dim]🧠 Thinking and analyzing viewport...[/dim]")
+            # Optionally persist step screenshot for visual audit
             try:
-                response = self.client.chat.completions.create(
-                    model=self.config.model_name,
-                    messages=messages,
-                    temperature=0.2,
-                )
-                assistant_text = response.choices[0].message.content or ""
-            except Exception as e:
-                self.console.print(f"[bold red]❌ LLM API Error: {e}[/bold red]")
-                return False
+                self.config.screenshot_dir.mkdir(parents=True, exist_ok=True)
+                img.save(self.config.screenshot_dir / f"step_{step}.png")
+            except Exception:
+                pass
+
+            # 3. Call Vision-LLM or Custom Planner
+            self.console.print("[dim]🧠 Thinking and analyzing viewport...[/dim]")
+            if self.planner_func:
+                try:
+                    assistant_text = self.planner_func(messages, target, step)
+                except Exception as e:
+                    self.console.print(f"[bold red]❌ Planner Error: {e}[/bold red]")
+                    return False
+            else:
+                try:
+                    response = self.client.chat.completions.create(
+                        model=self.config.model_name,
+                        messages=messages,
+                        temperature=0.2,
+                    )
+                    assistant_text = response.choices[0].message.content or ""
+                except Exception as e:
+                    self.console.print(f"[bold red]❌ LLM API Error: {e}[/bold red]")
+                    return False
 
             self.console.print(Panel(assistant_text, title="🤖 Agent Reasoning", style="cyan"))
             messages.append({"role": "assistant", "content": assistant_text})
