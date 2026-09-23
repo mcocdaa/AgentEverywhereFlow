@@ -79,9 +79,12 @@ def summon(
 @app.command(name="run")
 def run(
     target_query: str = typer.Option(
-        ..., "--target", help="Display index (e.g. 1) or Window title substring"
+        ...,
+        "--target",
+        "-t",
+        help="Target ID (e.g. hwnd:0x1b0a4, display:1), Table index (e.g. 1), Process (e.g. notepad.exe), or Title substring",
     ),
-    task: str = typer.Option(..., "--task", "-t", help="Task description"),
+    task: str = typer.Option(..., "--task", help="Task description"),
     mode: ExecutionMode = typer.Option(
         ExecutionMode.MINIMAL_PYTHON, "--mode", "-m", help="Execution mode"
     ),
@@ -89,28 +92,18 @@ def run(
     """Directly summon agent onto a matching display or window."""
     from agenteverywhereflow.agent.loop import AgentLoop
     from agenteverywhereflow.capturer import get_capturer
+    from agenteverywhereflow.capturer.selector import resolve_target
 
     capturer = get_capturer()
     all_targets = capturer.list_targets()
 
-    selected = None
-    # 1. Match display index
-    if target_query.isdigit():
-        idx = int(target_query)
-        if 1 <= idx <= len(all_targets):
-            selected = all_targets[idx - 1]
-
-    # 2. Match window title or process substring
-    if not selected:
-        for t in all_targets:
-            if target_query.lower() in t.title.lower() or (
-                t.process_name and target_query.lower() in t.process_name.lower()
-            ):
-                selected = t
-                break
+    selected = resolve_target(all_targets, target_query)
 
     if not selected:
         console.print(f"[bold red]❌ No target found matching query: '{target_query}'[/bold red]")
+        console.print(
+            "[dim]Tip: Run 'aef list-targets' to view all available Target IDs, handles, and indices.[/dim]"
+        )
         raise typer.Exit(1)
 
     loop = AgentLoop()

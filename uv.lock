@@ -9,7 +9,7 @@ resolution-markers = [
 
 [[package]]
 name = "agenteverywhereflow"
-version = "0.1.1"
+version = "0.1.2"
 source = { editable = "." }
 dependencies = [
     { name = "anthropic" },
@@ -21,6 +21,7 @@ dependencies = [
     { name = "pyautogui" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
+    { name = "pyperclip" },
     { name = "python-dotenv" },
     { name = "pyyaml" },
     { name = "rich" },
@@ -54,6 +55,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.7.0" },
     { name = "pydantic-settings", specifier = ">=2.2.0" },
     { name = "pydirectinput", marker = "sys_platform == 'win32' and extra == 'windows'", specifier = ">=1.0.4" },
+    { name = "pyperclip", specifier = ">=1.8.2" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
     { name = "python-dotenv", specifier = ">=1.0.1" },
     { name = "python-xlib", marker = "sys_platform == 'linux' and extra == 'linux'", specifier = ">=0.33" },

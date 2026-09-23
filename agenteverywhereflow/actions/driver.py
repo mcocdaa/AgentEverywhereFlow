@@ -139,19 +139,40 @@ class InputDriver:
             except Exception:
                 pass
 
-        # 2. Windows direct message injection
-        if sys.platform == "win32" and window_handle > 0:
+        # 2. Windows direct hardware / OS click
+        if sys.platform == "win32":
             try:
                 import win32api
                 import win32con
 
-                lparam = (window_rel_y << 16) | (window_rel_x & 0xFFFF)
-                msg_down = win32con.WM_LBUTTONDOWN if button == "left" else win32con.WM_RBUTTONDOWN
-                msg_up = win32con.WM_LBUTTONUP if button == "left" else win32con.WM_RBUTTONUP
+                if x is not None and y is not None:
+                    win32api.SetCursorPos((x, y))
+                    time.sleep(0.03)
+
+                down_flag = (
+                    win32con.MOUSEEVENTF_LEFTDOWN
+                    if button == "left"
+                    else (
+                        win32con.MOUSEEVENTF_RIGHTDOWN
+                        if button == "right"
+                        else win32con.MOUSEEVENTF_MIDDLEDOWN
+                    )
+                )
+                up_flag = (
+                    win32con.MOUSEEVENTF_LEFTUP
+                    if button == "left"
+                    else (
+                        win32con.MOUSEEVENTF_RIGHTUP
+                        if button == "right"
+                        else win32con.MOUSEEVENTF_MIDDLEUP
+                    )
+                )
 
                 for _ in range(clicks):
-                    win32api.PostMessage(window_handle, msg_down, 0, lparam)
-                    win32api.PostMessage(window_handle, msg_up, 0, lparam)
+                    win32api.mouse_event(down_flag, 0, 0, 0, 0)
+                    time.sleep(0.02)
+                    win32api.mouse_event(up_flag, 0, 0, 0, 0)
+                    time.sleep(0.02)
                 return
             except Exception:
                 pass
@@ -246,22 +267,24 @@ class InputDriver:
         if not backend:
             return
 
+        has_unicode = any(ord(c) > 127 for c in text)
+        # Use clipboard paste for unicode/Chinese or Windows to bypass IME interference
+        if has_unicode or sys.platform == "win32":
+            try:
+                import pyperclip
+
+                pyperclip.copy(text)
+                time.sleep(0.04)
+                backend.hotkey("ctrl", "v")
+                time.sleep(0.04)
+                return
+            except Exception:
+                pass
+
         try:
             backend.write(text, interval=interval)
         except Exception:
-            if sys.platform == "win32":
-                try:
-                    import win32clipboard
-
-                    win32clipboard.OpenClipboard()
-                    win32clipboard.EmptyClipboard()
-                    win32clipboard.SetClipboardText(text)
-                    win32clipboard.CloseClipboard()
-                    backend.hotkey("ctrl", "v")
-                except Exception:
-                    backend.write(text)
-            else:
-                backend.write(text)
+            backend.write(text)
 
     def press_key(self, key: str, window_handle: int = 0) -> None:
         """Press and release a single key (e.g. 'enter', 'backspace', 'tab', 'escape')."""

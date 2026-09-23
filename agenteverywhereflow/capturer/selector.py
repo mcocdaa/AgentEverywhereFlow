@@ -8,6 +8,57 @@ from agenteverywhereflow.capturer import get_capturer
 from agenteverywhereflow.capturer.base import TargetInfo, TargetType
 
 
+def resolve_target(targets: list[TargetInfo], query: str) -> TargetInfo | None:
+    """Resolve a target using multi-tier matching:
+
+    1. Exact target_id (e.g. 'hwnd:0x1b0a4', 'display:1', 'xwin:0x...')
+    2. Native handle (hex like '0x1b0a4' or decimal)
+    3. 1-based table index (e.g. '1', '2')
+    4. Exact or extensionless process name (e.g. 'notepad.exe', 'notepad')
+    5. Case-insensitive substring in title or process name
+    """
+    query_str = query.strip()
+    if not query_str:
+        return None
+    query_lower = query_str.lower()
+
+    # 1. Exact match by target_id
+    for t in targets:
+        if t.target_id.lower() == query_lower:
+            return t
+
+    # 2. Match by native handle
+    try:
+        handle_val = int(query_str, 16 if query_str.lower().startswith("0x") else 10)
+        for t in targets:
+            if t.native_handle == handle_val:
+                return t
+    except ValueError:
+        pass
+
+    # 3. Match 1-based table index
+    if query_str.isdigit():
+        idx = int(query_str)
+        if 1 <= idx <= len(targets):
+            return targets[idx - 1]
+
+    # 4. Match exact or extensionless process name
+    for t in targets:
+        if t.process_name:
+            p_lower = t.process_name.lower()
+            if p_lower == query_lower or p_lower == f"{query_lower}.exe":
+                return t
+
+    # 5. Match window title or process substring
+    for t in targets:
+        if query_lower in t.title.lower() or (
+            t.process_name and query_lower in t.process_name.lower()
+        ):
+            return t
+
+    return None
+
+
 class TargetSelector:
     """Provides interactive selection for displays and application windows."""
 
@@ -24,6 +75,7 @@ class TargetSelector:
         table = Table(title="🎯 Agent Everywhere - Select Target to Summon", show_lines=True)
         table.add_column("No.", justify="center", style="cyan", no_wrap=True)
         table.add_column("Type", justify="center", style="magenta")
+        table.add_column("Target ID", style="bright_cyan", no_wrap=True)
         table.add_column("Title / Window Name", style="bold green")
         table.add_column("Process", style="yellow")
         table.add_column("Resolution / Bounds", style="white")
@@ -37,6 +89,7 @@ class TargetSelector:
             table.add_row(
                 str(current_idx),
                 "🖥️ Display",
+                d.target_id,
                 d.title,
                 "-",
                 f"{d.rect.width}x{d.rect.height} (at {d.rect.x},{d.rect.y})",
@@ -50,6 +103,7 @@ class TargetSelector:
             table.add_row(
                 str(current_idx),
                 "🪟 Window",
+                w.target_id,
                 title_text,
                 proc,
                 f"{w.rect.width}x{w.rect.height}",

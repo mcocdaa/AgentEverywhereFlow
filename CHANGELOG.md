@@ -5,6 +5,30 @@
 
 ---
 
+## [0.1.2] - 2026-09-23
+
+### 修复与强化 (Fixed & Enhanced)
+- **Windows 真实输入系统原生加固**：
+  - **硬件级鼠标点击注入**：采用 `SetCursorPos` + `mouse_event(MOUSEEVENTF_LEFTDOWN/UP)` 物理事件取代顶层窗体 `WM_LBUTTONDOWN` 投递，彻底解决现代 Windows 11 记事本、VS Code、Chrome 等多层子控件不响应点击的问题。
+  - **Win32 焦点锁定穿透 (AttachThreadInput)**：引入线程输入挂载技巧，强制突破 Windows 系统的 `SPI_SETFOREGROUNDLOCKTIMEOUT` 前台切换限制，确保最小化或失焦目标窗口被物理唤醒置顶。
+  - **Unicode / 中文无损注入与防输入法劫持**：引入系统剪贴板直通注入（Clipboard Injection + `Ctrl+V`），彻底规避 `pyautogui.write` 丢失非 ASCII 汉字以及中文输入法（IME）候选词弹窗拦截的问题。
+- **目标精准定位与歧义消除 (Target ID & Index Resolution)**：
+  - `aef list-targets` 表格新增专属 **Target ID** 列（如 `hwnd:0x1b0a4`, `display:1`）。
+  - CLI `--target` / `-t` 支持五级解析策略：Target ID 精确匹配 -> 16进制/10进制原生 HWND 句柄 -> 表格序号（如 `1`, `2`）-> 进程名（如 `notepad.exe` / `notepad`）-> 窗口标题模糊匹配。
+  - 核心逻辑抽象为独立的 `resolve_target` 工具并接入全套单元测试。
+
+---
+
+## [0.1.1] - 2026-09-23
+
+### 优化与新增 (Optimized & Added)
+- **CLI 启动性能提升 45 倍**：重构 `cli.py` 与 `agent/loop.py`，采用延迟惰性导入（Lazy Import），避免在执行 `aef --help` 或 `aef version` 时加载重型依赖，冷启动耗时从 9.1s 暴降至 ~0.2s。
+- **Windows 原生进程名与状态发现**：
+  - 采用 `QueryFullProcessImageNameW` 获取目标窗口准确进程名（如 `Code.exe`, `WindowsTerminal.exe`）。
+  - 接入 `GetWindowPlacement` 准确识别最小化窗口并在捕获与激活时自动还原。
+
+---
+
 ## [0.1.0] - 2026-09-23
 
 ### 新增 (Added)

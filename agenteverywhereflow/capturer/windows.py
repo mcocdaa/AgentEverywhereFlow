@@ -175,7 +175,7 @@ class WindowsCapturer(BaseCapturer):
 
             windows.append(
                 TargetInfo(
-                    target_id=f"hwnd:{hwnd}",
+                    target_id=f"hwnd:{hex(hwnd)}",
                     target_type=TargetType.WINDOW,
                     title=title,
                     process_name=proc_name,
@@ -258,16 +258,48 @@ class WindowsCapturer(BaseCapturer):
             return Image.frombytes("RGB", sct_img.size, sct_img.bgra, "raw", "BGRX")
 
     def focus(self, target: TargetInfo) -> bool:
-        """Bring the target window to foreground."""
+        """Bring the target window to foreground reliably bypassing Windows lock."""
         if target.target_type == TargetType.DISPLAY:
             return True
         if is_windows and target.native_handle:
             hwnd = target.native_handle
             try:
+                import time
+
+                # 1. Restore if minimized
                 if win32gui.IsIconic(hwnd):
                     win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
-                win32gui.SetForegroundWindow(hwnd)
+                else:
+                    win32gui.ShowWindow(hwnd, win32con.SW_SHOW)
+
+                # 2. AttachThreadInput trick to bypass Windows SetForegroundWindow lock
+                fore_hwnd = win32gui.GetForegroundWindow()
+                if fore_hwnd != hwnd:
+                    fore_thread, _ = win32process.GetWindowThreadProcessId(fore_hwnd)
+                    cur_thread = win32process.GetCurrentThreadId()
+                    target_thread, _ = win32process.GetWindowThreadProcessId(hwnd)
+
+                    if fore_thread and fore_thread != cur_thread:
+                        win32process.AttachThreadInput(cur_thread, fore_thread, True)
+                    if target_thread and target_thread != cur_thread:
+                        win32process.AttachThreadInput(cur_thread, target_thread, True)
+
+                    win32gui.BringWindowToTop(hwnd)
+                    win32gui.SetForegroundWindow(hwnd)
+
+                    if fore_thread and fore_thread != cur_thread:
+                        win32process.AttachThreadInput(cur_thread, fore_thread, False)
+                    if target_thread and target_thread != cur_thread:
+                        win32process.AttachThreadInput(cur_thread, target_thread, False)
+                else:
+                    win32gui.BringWindowToTop(hwnd)
+
+                time.sleep(0.08)
                 return True
             except Exception:
-                return False
+                try:
+                    win32gui.SetForegroundWindow(hwnd)
+                    return True
+                except Exception:
+                    return False
         return False
