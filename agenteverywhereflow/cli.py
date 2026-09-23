@@ -5,9 +5,6 @@ from rich.console import Console
 from rich.panel import Panel
 
 from agenteverywhereflow import __version__
-from agenteverywhereflow.agent.loop import AgentLoop
-from agenteverywhereflow.capturer import get_capturer
-from agenteverywhereflow.capturer.selector import TargetSelector
 from agenteverywhereflow.config import ExecutionMode
 
 app = typer.Typer(
@@ -36,6 +33,9 @@ def list_targets(
     windows_only: bool = typer.Option(False, "--windows-only", "-w", help="Only list windows"),
 ) -> None:
     """List all available physical displays and active application windows."""
+    from agenteverywhereflow.capturer import get_capturer
+    from agenteverywhereflow.capturer.selector import TargetSelector
+
     capturer = get_capturer()
     inc_disp = not windows_only
     inc_win = not displays_only
@@ -55,6 +55,9 @@ def summon(
     ),
 ) -> None:
     """Interactive screen-share style target picker and agent summoner."""
+    from agenteverywhereflow.agent.loop import AgentLoop
+    from agenteverywhereflow.capturer.selector import TargetSelector
+
     selector = TargetSelector()
     target = selector.interactive_select()
     if not target:
@@ -84,6 +87,9 @@ def run(
     ),
 ) -> None:
     """Directly summon agent onto a matching display or window."""
+    from agenteverywhereflow.agent.loop import AgentLoop
+    from agenteverywhereflow.capturer import get_capturer
+
     capturer = get_capturer()
     all_targets = capturer.list_targets()
 

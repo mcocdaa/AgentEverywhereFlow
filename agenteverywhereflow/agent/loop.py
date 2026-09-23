@@ -6,7 +6,6 @@ import json
 import re
 from typing import Any
 
-from openai import OpenAI
 from PIL import Image
 from rich.console import Console
 from rich.panel import Panel
@@ -30,10 +29,19 @@ class AgentLoop:
         self.planner_func = planner_func
         self.capturer = get_capturer()
         self.console = Console()
-        self.client = OpenAI(
-            api_key=self.config.api_key or "sk-fake",
-            base_url=self.config.base_url,
-        )
+        self._client: Any = None
+
+    @property
+    def client(self) -> Any:
+        """Lazily initialize OpenAI client on demand."""
+        if self._client is None:
+            from openai import OpenAI
+
+            self._client = OpenAI(
+                api_key=self.config.api_key or "sk-fake",
+                base_url=self.config.base_url,
+            )
+        return self._client
 
     def _encode_image(self, img: Image.Image) -> str:
         """Encode PIL Image to base64 JPEG string."""

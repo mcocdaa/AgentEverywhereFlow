@@ -105,6 +105,13 @@ class WindowsCapturer(BaseCapturer):
             if not title:
                 return True
 
+            # Exclude desktop shell manager, overlay and invisible system frames
+            class_name = win32gui.GetClassName(hwnd)
+            if class_name in ("Progman", "WorkerW", "Shell_TrayWnd", "Windows.UI.Core.CoreWindow"):
+                return True
+            if title in ("Program Manager", "NVIDIA GeForce Overlay", "Windows Input Experience"):
+                return True
+
             # Exclude cloaked windows (e.g. UWP suspended apps, background store apps)
             DWMWA_CLOAKED = 14
             is_cloaked = ctypes.c_int(0)
@@ -117,27 +124,54 @@ class WindowsCapturer(BaseCapturer):
             if is_cloaked.value != 0:
                 return True
 
-            # Get rect
-            rect_raw = win32gui.GetWindowRect(hwnd)
-            width = rect_raw[2] - rect_raw[0]
-            height = rect_raw[3] - rect_raw[1]
+            is_minimized = bool(win32gui.IsIconic(hwnd))
+
+            # Extract window rect (use restored placement rectangle if minimized)
+            if is_minimized:
+                try:
+                    placement = win32gui.GetWindowPlacement(hwnd)
+                    norm_rect = placement[4]  # (left, top, right, bottom)
+                    width = norm_rect[2] - norm_rect[0]
+                    height = norm_rect[3] - norm_rect[1]
+                    rect_raw = norm_rect
+                except Exception:
+                    rect_raw = win32gui.GetWindowRect(hwnd)
+                    width = rect_raw[2] - rect_raw[0]
+                    height = rect_raw[3] - rect_raw[1]
+            else:
+                rect_raw = win32gui.GetWindowRect(hwnd)
+                width = rect_raw[2] - rect_raw[0]
+                height = rect_raw[3] - rect_raw[1]
 
             # Filter out zero-size or off-screen invisible handles
             if width <= 30 or height <= 30:
                 return True
 
-            # Get process info
+            # Get process info: try psutil first, then native kernel32 QueryFullProcessImageNameW
             _, pid = win32process.GetWindowThreadProcessId(hwnd)
             proc_name = ""
             try:
                 import psutil
 
-                proc = psutil.Process(pid)
-                proc_name = proc.name()
+                proc_name = psutil.Process(pid).name()
             except Exception:
-                pass
+                try:
+                    PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+                    h_proc = ctypes.windll.kernel32.OpenProcess(  # type: ignore[attr-defined]
+                        PROCESS_QUERY_LIMITED_INFORMATION, False, pid
+                    )
+                    if h_proc:
+                        buf = ctypes.create_unicode_buffer(1024)
+                        size = ctypes.c_ulong(1024)
+                        if ctypes.windll.kernel32.QueryFullProcessImageNameW(  # type: ignore[attr-defined]
+                            h_proc, 0, buf, ctypes.byref(size)
+                        ):
+                            from pathlib import Path
 
-            is_minimized = win32gui.IsIconic(hwnd) != 0
+                            proc_name = Path(buf.value).name
+                        ctypes.windll.kernel32.CloseHandle(h_proc)  # type: ignore[attr-defined]
+                except Exception:
+                    pass
 
             windows.append(
                 TargetInfo(

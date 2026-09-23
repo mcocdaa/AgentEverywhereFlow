@@ -45,12 +45,14 @@ class TargetSelector:
 
         for w in windows:
             proc = w.process_name or "-"
+            minimized_tag = " [dim](minimized)[/dim]" if w.is_minimized else ""
+            title_text = (w.title[:45] + ("..." if len(w.title) > 45 else "")) + minimized_tag
             table.add_row(
                 str(current_idx),
                 "🪟 Window",
-                w.title[:45] + ("..." if len(w.title) > 45 else ""),
+                title_text,
                 proc,
-                f"{d.rect.width}x{d.rect.height}" if False else f"{w.rect.width}x{w.rect.height}",
+                f"{w.rect.width}x{w.rect.height}",
             )
             current_idx += 1
 
