@@ -19,24 +19,37 @@ wheels/
 .installed.cfg
 *.egg
 
+# Environments
 .env
-.env.local
+.env.*
+!.env.example
 *.venv
 venv/
 ENV/
 env/
 
+# Testing & Quality
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
 .coverage
 htmlcov/
 
+# Editor & OS
 .vscode/
 .idea/
 *.swp
 *.swo
+.DS_Store
+Thumbs.db
 
+# AgentEverywhereFlow Runtime Artifacts
+.aef_cache/
 screenshots/
 recordings/
 logs/
+benchmarks/output/
+*.png
+*.jpg
+*.jpeg
+*.webp

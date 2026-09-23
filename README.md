@@ -1,142 +1,241 @@
-# AgentEverywhereFlow (`AEFlow`)
+<div align="center">
 
-> **Agent on Everywhere**: Summon an autonomous GUI agent on any screen or window. 任何页面与窗口皆可一键召唤的具身智能体。
+# 🌐 AgentEverywhereFlow (`AEFlow`)
+
+**Agent on Everywhere**: Instant screen & window casting for embodied desktop agents.  
+任何页面与窗口皆可一键投屏召唤的具身智能体基础设施。
 
 [![Family: *Flow](https://img.shields.io/badge/family-*Flow-8A2BE2.svg)](https://github.com/mcocdaa)
+[![CI Status](https://github.com/mcocdaa/AgentEverywhereFlow/actions/workflows/ci.yml/badge.svg)](https://github.com/mcocdaa/AgentEverywhereFlow/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python: 3.11+](https://img.shields.io/badge/Python-3.11%2B-brightgreen.svg)](pyproject.toml)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/mcocdaa)
+[![Code Style: Ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+
+[English](README.md) | [简体中文](README_CN.md)
+
+</div>
 
 ---
 
-## 🌟 核心理念 (Core Philosophy)
+## 💡 Why AgentEverywhereFlow?
 
-现有的 Computer-Use Agent 通常存在以下痛点：
-1. **全屏视口太乱**：模型容易被无关窗口、多屏坐标系偏移或后台弹窗干扰。
-2. **缺乏即时召唤感**：没有像会议软件（Zoom / 腾讯会议）屏幕共享那样轻巧的选择器——自由选择**整屏（桌面1/桌面2）**还是**特定应用窗口（浏览器、IDE、微信等）**。
-3. **安全与灵活性失衡**：要么死板，要么放任脚本运行导致误触。
+Existing computer-use and GUI automation agents suffer from three major roadblocks:
+1. **Unfocused Global Viewports**: Grabbing the entire desktop leads to visual noise, popup interference, and negative/distorted coordinates across multiple monitors.
+2. **Lack of Instant Targeting**: There is no lightweight experience akin to Zoom / Tencent Meeting screen-sharing—allowing users to freely cast either an **entire monitor** or a **specific application window** (VS Code, Chrome, Terminal, etc.) to the agent.
+3. **Execution Rigidity vs. Safety**: Either agents are constrained to sluggish step-by-step clicks or given unconstrained bash access that risks destructive missteps.
 
-**AgentEverywhereFlow** 旨在打破这一切：
-- 🎯 **投屏式视口隔离 (Screen-Cast Picker)**：像发起屏幕共享一样，一键绑定至任何显示器或指定应用窗口，精确裁剪渲染视口与坐标系映射。
-- ⚡ **即刻召唤 (Anywhere Summon)**：全局快捷键随时呼出，半透明 HUD 实时显示决策流，支持一键急停（`ESC`）。
-- 🛡️ **双模式执行引擎 (Dual-Mode Execution)**：
-  - **极简模式 (CodeAct)**：直接生成并运行 Python 工具调用代码，灵活高效。
-  - **控制模式 (Guarded Action)**：细粒度原子级工具调用 + 敏感操作人机协同安全网。
-- 🖥️ **跨平台演进路线**：Windows 优先（原生 DWM / PrintWindow 捕获 + 抗 DPI 缩放），随后平滑适配 Linux (PipeWire/X11) 与 macOS (ScreenCaptureKit)。
+**AgentEverywhereFlow (AEFlow)** solves this by introducing **Screen-Cast Style Viewport Isolation** for autonomous GUI agents:
+- 🎯 **Screen-Cast Target Picker**: Discover and bind agents to any physical display or active application window with zero-copy capture and precise viewport coordinate projection.
+- ⚡ **Instant Summon (`aef summon`)**: Cast and summon an agent in seconds via an interactive terminal UI or global shortcut.
+- 📐 **Explicit Resolution Contract**: Native pixel-space calibration `(0, 0) -> (width, height)` paired with optional coordinate grids and Set-of-Mark (SoM) indicators.
+- 🛡️ **Dual-Mode Execution Architecture**:
+  - **Minimal Mode (CodeAct REPL)**: High-speed, pythonic chaining of actions (`click`, `type_text`, `press`, `wait`, `hotkey`).
+  - **Guarded Mode (JSON Schema)**: Strict atomic action schemas with safety policy filters and human-in-the-loop confirmation gates.
+- 🎯 **Recursive Sub-Widget Hit Testing**: Deep X11 and Win32 tree inspection ensuring clicks reliably trigger nested buttons, inputs, and controls without event dropping.
 
 ---
 
-## 🏗️ 架构全景 (Architecture)
+## 🏗️ Architecture Blueprint
 
 ```mermaid
 flowchart TD
-    subgraph UI["1. 召唤交互层 (HUD & Selector)"]
-        Hotkey["全局热键 (Win+Shift+A)"] --> Picker["投屏式选择器 (Target Selector)<br/>(Displays 1..N / Windows 1..M)"]
-        Picker --> HUD["半透明悬浮控制台 (HUD)"]
+    subgraph UI["1. Target Discovery & Summoning"]
+        CLI["CLI: aef summon / aef run"] --> Selector["Screen-Cast Selector (Displays & Windows)"]
+        Selector --> Target["TargetInfo (HWND / XID / Rect)"]
     end
 
-    subgraph Capturer["2. 视口捕获与坐标变换 (Viewport Engine)"]
-        Picker --> Target["TargetContext<br/>(HWND / DisplayID / Rect)"]
-        Target --> WinEngine["Windows: PrintWindow / DWM / DXGI"]
-        Target --> LinEngine["Linux: PipeWire / X11"]
-        Target --> MacEngine["macOS: ScreenCaptureKit"]
-        WinEngine --> DPI["DPI & 客户区坐标映射矩阵"]
+    subgraph Perception["2. Viewport Capture & Geometry"]
+        Target --> CapturerRouter{"OS Dispatch"}
+        CapturerRouter -->|Windows| WinCap["Win32 DWM / PrintWindow (PW_RENDERFULLCONTENT)<br/>+ Per-Monitor DPI-v2 Awareness"]
+        CapturerRouter -->|Linux| LinCap["X11 Drawable Capture (XGetImage)<br/>+ mss multi-monitor fallback"]
+        CapturerRouter -->|macOS| MacCap["ScreenCaptureKit (Planned)"]
+        WinCap --> ViewportImg["Target-Relative Viewport Image"]
+        LinCap --> ViewportImg
+        MacCap --> ViewportImg
     end
 
-    subgraph Brain["3. 决策中枢 (Agent Brain)"]
-        DPI --> VLM["多模态视觉大模型 (VLM Planner)<br/>Claude 3.5 / GPT-4o / Qwen2-VL"]
-        VLM --> Router{"执行模式路由"}
+    subgraph Calibration["3. Spatial Calibration & Vision"]
+        ViewportImg --> Calib["Resolution Contract: (0,0) -> (W,H)"]
+        Calib --> Grid["Optional Grid Ruler & SoM Markings"]
+        Grid --> VLM["Vision-Language Model (GPT-4o, Claude 3.5, Qwen2-VL)"]
     end
 
-    subgraph Exec["4. 双模式执行驱动 (Execution Driver)"]
-        Router -->|极简模式| PythonREPL["Python REPL Sandbox (CodeAct)"]
-        Router -->|控制模式| Guarded["细粒度安全工具链 (Guarded Tools)"]
-        PythonREPL --> Driver["系统键鼠注入驱动<br/>(Win32 SendInput / PyDirectInput / X11)"]
-        Guarded --> Driver
+    subgraph Execution["4. Dual-Mode Execution & Event Injection"]
+        VLM --> Router{"Execution Mode"}
+        Router -->|Minimal / CodeAct| REPL["Python REPL Sandbox (click, type, press, wait)"]
+        Router -->|Guarded| GuardedEngine["JSON Schema Guarded Engine (Safety Intercepts)"]
+        REPL --> Projector["CoordinateProjector (Local -> Screen / Window)"]
+        GuardedEngine --> Projector
+        Projector --> Driver["InputDriver (Win32 SendInput / X11 XSendEvent)"]
+        Driver --> HitTest["Recursive Child Hit-Testing (_find_x11_child_at)"]
     end
 ```
 
 ---
 
-## 🚀 快速上手 (Quick Start)
+## ⚖️ Dual-Mode Execution Comparison
 
-### 安装
+| Feature | ⚡ Minimal Mode (CodeAct REPL) | 🛡️ Guarded Mode (Structured JSON) |
+| :--- | :--- | :--- |
+| **Protocol** | Python code block (```python ... ```) | JSON Schema (```json ... ```) |
+| **API** | `click(x, y)`, `type_text()`, `press()`, `wait()` | `{"action": "click", "x": 100, "y": 200}` |
+| **Throughput** | High (multi-action chaining in single LLM turn) | Deterministic (strict atomic step verification) |
+| **Safety Net** | Restricted sandbox built-ins | Policy interceptors & Human confirmation prompts |
+| **Best For** | Prototyping, web browsing, form filling | Financial operations, sensitive infrastructure, production |
 
-推荐使用现代 Python 包管理器 `uv` 进行安装：
+---
+
+## ⚡ Quick Start
+
+### Installation
+
+AEFlow is built using modern Python packaging with [`uv`](https://github.com/astral-sh/uv):
 
 ```bash
-# 克隆仓库
+# Clone the repository
 git clone https://github.com/mcocdaa/AgentEverywhereFlow.git
 cd AgentEverywhereFlow
 
-# 安装依赖
-uv pip install -e ".[windows]"   # Windows 用户
-# 或者
-uv pip install -e ".[linux]"     # Linux 用户
+# Install dependencies based on your operating system
+# On Linux:
+uv pip install -e ".[linux]"
+
+# On Windows:
+uv pip install -e ".[windows]"
+
+# Developer / Contributor setup:
+uv pip install -e ".[dev,linux]"
 ```
 
-### 快速启动
+### Configuration
+
+Copy the template environment file and add your model provider credentials:
 
 ```bash
-# 1. 启动交互式窗口选择器并召唤 Agent
-aef summon
+cp .env.example .env
+```
 
-# 2. 或者在命令行直接列出当前所有可绑定的活动窗口与屏幕
-aef list-targets
-
-# 3. 指定目标窗口标题并下发任务
-aef run --target "Chrome" --task "帮我在页面里搜索最近的 GitHub Trending 项目"
+Key environment variables in `.env`:
+```ini
+AEF_MODEL_NAME=gpt-4o
+AEF_API_KEY=your_api_key_here
+AEF_BASE_URL=https://api.openai.com/v1
+AEF_DEFAULT_MODE=minimal
 ```
 
 ---
 
-## 📂 项目结构 (Repository Layout)
+## 🕹️ CLI Usage
+
+```bash
+# 1. Interactive screen-cast target picker and agent summoner
+aef summon
+
+# 2. List all available physical displays and active application windows
+aef list-targets
+
+# 3. Directly summon agent onto a matching display or window title
+aef run --target "Chrome" --task "Search for GitHub Trending repositories"
+
+# 4. Check system info & installed version
+aef version
+```
+
+---
+
+## 💻 Programmatic Usage
+
+You can embed AEFlow directly into your Python workflows:
+
+```python
+from agenteverywhereflow.capturer import get_capturer
+from agenteverywhereflow.agent.loop import AgentLoop
+from agenteverywhereflow.config import AppConfig, ExecutionMode
+
+# 1. Discover target windows
+capturer = get_capturer()
+targets = capturer.list_targets()
+target = targets[0]  # E.g. VS Code, Terminal, or Display 1
+
+# 2. Initialize Agent Loop
+loop = AgentLoop(app_config=AppConfig(default_mode=ExecutionMode.MINIMAL_PYTHON))
+
+# 3. Run autonomous task
+loop.run(target=target, user_task="Fill the form and click submit")
+```
+
+See [examples/](examples/) for more scripts, including custom model planner callbacks.
+
+---
+
+## 🧪 Comprehensive Benchmarks
+
+AEFlow includes a high-fidelity end-to-end benchmark suite testing real GUI windows and multi-step agent actions:
+
+```bash
+# Run comprehensive multi-scenario suite (Form, Calculator, Guarded Mode)
+uv run python -m benchmarks.bench_suite
+
+# Run autonomous goal convergence benchmark
+uv run python -m benchmarks.bench_autonomous
+
+# Run standard unit tests
+uv run pytest tests/ -v
+```
+
+See [benchmarks/README.md](benchmarks/README.md) for benchmark specifications and results.
+
+---
+
+## 📂 Repository Layout
 
 ```text
 AgentEverywhereFlow/
-├── pyproject.toml              # 现代包构建规范
-├── README.md                   # 官方中英文档
-├── agenteverywhereflow/        # 核心源码包 (CLI alias: aef)
-│   ├── cli.py                  # CLI 命令集 (summon, list-targets, run)
-│   ├── config.py               # 全局设置与环境配置
-│   ├── capturer/               # 跨平台屏幕/窗口枚举与零拷贝捕获
-│   │   ├── base.py             # 抽象基类与 TargetContext
-│   │   ├── windows.py          # Windows 原生 Win32/DWM 视口捕获
-│   │   ├── linux.py            # Linux X11/PipeWire 视口捕获
-│   │   └── selector.py         # 交互式投屏式目标选择器
-│   ├── actions/                # 底层键鼠高精度驱动与坐标映射
-│   │   ├── driver.py           # 跨平台键鼠驱动
-│   │   └── coords.py           # 视口像素 -> 物理屏幕坐标系投影
-│   ├── engine/                 # 双模式执行中枢
-│   │   ├── base.py             # 执行器接口与安全状态
-│   │   ├── python_repl.py      # 极简模式: CodeAct Python 解释器
-│   │   └── guarded.py          # 控制模式: 原子级动作安全门禁
-│   ├── agent/                  # VLM 提示词与循环流 (Observe-Plan-Act)
-│   │   ├── loop.py             # 具身智能体生命周期中枢
-│   │   └── prompts.py          # 视口具身提示词
-│   └── safety/                 # 安全策略拦截器 (Human-in-the-loop)
-│       └── policy.py           # 敏感行为规则过滤器
-└── tests/                      # 单元与集成测试
+├── .github/                    # CI/CD workflows, issue templates, dependabot
+├── agenteverywhereflow/        # Core package (CLI: aef)
+│   ├── actions/                # InputDriver & CoordinateProjector
+│   ├── agent/                  # AgentLoop, Prompts & VisionPipeline (SoM)
+│   ├── capturer/               # Win32, X11 & interactive TargetSelector
+│   ├── engine/                 # Minimal (CodeAct REPL) & Guarded engines
+│   ├── cli.py                  # Typer CLI application
+│   └── config.py               # Pydantic v2 application configuration
+├── benchmarks/                 # Multi-scenario autonomous benchmark suite
+├── docs/                       # Architecture, vision pipeline, and engine docs
+├── examples/                   # Developer invocation examples
+├── tests/                      # Unit tests (pytest)
+├── pyproject.toml              # Build & dependency declarations
+├── CONTRIBUTING.md             # Developer contribution guide
+├── SECURITY.md                 # Security reporting policy
+├── AGENTS.md                   # AI Coding Agent invariants & guidelines
+└── CHANGELOG.md                # Release version history
 ```
 
 ---
 
-## 🗺️ 路线图 (Roadmap)
+## 🗺️ Roadmap
 
-- [x] **v0.1.0 (MVP 阶段)**：
-  - [x] 跨平台视口抽象：显示器全屏与独立窗口枚举。
-  - [x] Windows 原生窗口捕获与 DPI 映射。
-  - [x] 双模式执行引擎基座（极简 Python REPL 模式 + 细粒度控制模式）。
-  - [x] 命令行投屏式选择与交互（`aef summon`）。
-- [ ] **v0.2.0 (HUD 沉浸交互)**：
-  - [ ] 基于轻量级半透明浮窗的召唤 HUD。
-  - [ ] 全局热键唤起与 ESC 一键急停刹车。
-- [ ] **v0.3.0 (跨系统扩展)**：
-  - [ ] Linux Wayland / PipeWire 深度适配。
-  - [ ] macOS ScreenCaptureKit 视口集成。
+- [x] **v0.1.0 (MVP Foundation)**:
+  - [x] Viewport abstractions: Display & Window enumeration.
+  - [x] Windows native DWM / `PrintWindow` capture with Per-Monitor DPI-v2 awareness.
+  - [x] Linux X11 native drawable window capture & child hit-testing (`_find_x11_child_at`).
+  - [x] Dual-mode execution engines (CodeAct REPL & Guarded Action Engine).
+  - [x] End-to-end benchmark suite (Form, Calculator, Guarded).
+- [ ] **v0.2.0 (Interactive HUD)**:
+  - [ ] Transparent floating HUD showing real-time agent reasoning steps.
+  - [ ] Global hotkey summoning (`Win+Shift+A` / `Ctrl+Shift+A`) and instant emergency stop (`ESC`).
+- [ ] **v0.3.0 (Ecosystem Expansion)**:
+  - [ ] Linux Wayland / PipeWire portal integration.
+  - [ ] macOS ScreenCaptureKit integration.
 
 ---
 
-## 📄 开源许可证
+## 🤝 Contributing
 
-本项目采用 [MIT 许可证](LICENSE)。
+Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md) before submitting pull requests.
+
+---
+
+## 📄 License
+
+This project is licensed under the [MIT License](LICENSE).

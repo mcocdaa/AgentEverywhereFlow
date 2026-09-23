@@ -1,0 +1,21 @@
+# EditorConfig: https://EditorConfig.org
+# Cross-editor / IDE formatting configuration
+
+root = true
+
+[*]
+charset = utf-8
+indent_style = space
+indent_size = 4
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.{js,jsx,ts,tsx,vue,json,css,scss,less,html,md,yml,yaml,toml}]
+indent_size = 2
+
+[*.{py}]
+indent_size = 4
+
+[Makefile]
+indent_style = tab
