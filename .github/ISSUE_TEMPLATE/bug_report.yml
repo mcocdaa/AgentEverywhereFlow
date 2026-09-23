@@ -1,0 +1,62 @@
+name: 🐛 Bug Report / 问题反馈
+description: 提交软件运行中的缺陷、异常报错或非预期行为
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢你反馈问题！请在提交前查阅已有的 Issue，避免重复提单。
+  - type: textarea
+    id: description
+    attributes:
+      label: 问题描述 (Bug Description)
+      description: 请清晰、简要地描述你遇到的 Bug 现象。
+      placeholder: 例如：在 Windows 11 高分屏下，窗口局部坐标点击发生了偏移...
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: 复现步骤 (Steps to Reproduce)
+      description: 能够稳定复现该问题的最小操作步骤。
+      placeholder: |
+        1. 启动命令 `aef summon`
+        2. 选择窗口 'Visual Studio Code'
+        3. 触发指令: '点击顶栏菜单'
+        4. 发现点击位置偏右上方 50 像素
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望行为 (Expected Behavior)
+      description: 在正常情况下应当发生的结果。
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: 错误日志与截图 (Logs & Screenshots)
+      description: 请贴出完整的终端异常堆栈（使用代码块 ``` 包裹）或异常截图。
+      render: shell
+  - type: dropdown
+    id: os
+    attributes:
+      label: 操作系统 (Operating System)
+      options:
+        - Windows 11
+        - Windows 10
+        - Linux (Ubuntu/Debian) - X11
+        - Linux (Ubuntu/Debian) - Wayland
+        - Linux (Arch/Fedora/Other)
+        - macOS (Sonoma / Sequoia)
+    validations:
+      required: true
+  - type: input
+    id: python-version
+    attributes:
+      label: Python 版本
+      placeholder: 例如：Python 3.12.3 / uv 0.4.x
+    validations:
+      required: true
