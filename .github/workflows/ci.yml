@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   lint:
-    name: Code Quality (ruff + formatting)
+    name: Code Quality (ruff + mypy)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -31,6 +31,9 @@ jobs:
       - name: Set up Python 3.12
         run: uv python install 3.12
 
+      - name: Create virtualenv
+        run: uv venv
+
       - name: Install dependencies
         run: uv pip install -e ".[dev,linux]"
 
@@ -39,6 +42,9 @@ jobs:
 
       - name: Check code formatting
         run: uv run ruff format --check .
+
+      - name: Run mypy type check
+        run: uv run mypy agenteverywhereflow
 
   test-linux:
     name: Test Linux (Python ${{ matrix.python-version }})
@@ -59,6 +65,9 @@ jobs:
 
       - name: Set up Python ${{ matrix.python-version }}
         run: uv python install ${{ matrix.python-version }}
+
+      - name: Create virtualenv
+        run: uv venv
 
       - name: Install system dependencies for headless X11 testing
         run: |
@@ -87,6 +96,9 @@ jobs:
 
       - name: Set up Python 3.12
         run: uv python install 3.12
+
+      - name: Create virtualenv
+        run: uv venv
 
       - name: Install package with windows dependencies
         run: uv pip install -e ".[dev,windows]"

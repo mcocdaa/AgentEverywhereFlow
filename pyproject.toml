@@ -71,10 +71,6 @@ dev = [
 [project.scripts]
 aef = "agenteverywhereflow.cli:app"
 
-[[tool.uv.index]]
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
-default = true
-
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
