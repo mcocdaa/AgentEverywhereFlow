@@ -168,14 +168,30 @@ class InputDriver:
                     )
                 )
 
+                from rich.console import Console
+
+                from agenteverywhereflow.config import config
+
+                if config.debug:
+                    Console(file=sys.__stdout__).print(
+                        f"[dim magenta]    [DEBUG-WIN32] SetCursorPos(({x}, {y})) -> mouse_event(down=0x{down_flag:x}, up=0x{up_flag:x}, clicks={clicks})[/dim magenta]"
+                    )
+
                 for _ in range(clicks):
                     win32api.mouse_event(down_flag, 0, 0, 0, 0)
                     time.sleep(0.02)
                     win32api.mouse_event(up_flag, 0, 0, 0, 0)
                     time.sleep(0.02)
                 return
-            except Exception:
-                pass
+            except Exception as e:
+                from rich.console import Console
+
+                from agenteverywhereflow.config import config
+
+                if config.debug:
+                    Console(file=sys.__stdout__).print(
+                        f"[bold red]    [DEBUG-WIN32] Native mouse_event failed: {e}, falling back to PyAutoGUI[/bold red]"
+                    )
 
         # 3. Standard fallback: PyAutoGUI
         backend = self._get_backend()
@@ -272,14 +288,28 @@ class InputDriver:
         if has_unicode or sys.platform == "win32":
             try:
                 import pyperclip
+                from rich.console import Console
+
+                from agenteverywhereflow.config import config
 
                 pyperclip.copy(text)
                 time.sleep(0.04)
+                if config.debug:
+                    Console(file=sys.__stdout__).print(
+                        f"[dim magenta]    [DEBUG-WIN32] Clipboard text set ({len(text)} chars) -> backend.hotkey('ctrl', 'v')[/dim magenta]"
+                    )
                 backend.hotkey("ctrl", "v")
                 time.sleep(0.04)
                 return
-            except Exception:
-                pass
+            except Exception as e:
+                from rich.console import Console
+
+                from agenteverywhereflow.config import config
+
+                if config.debug:
+                    Console(file=sys.__stdout__).print(
+                        f"[bold red]    [DEBUG-WIN32] Clipboard paste failed: {e}, falling back to backend.write[/bold red]"
+                    )
 
         try:
             backend.write(text, interval=interval)

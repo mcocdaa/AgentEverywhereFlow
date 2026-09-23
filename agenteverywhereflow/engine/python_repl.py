@@ -9,6 +9,8 @@ import sys
 import traceback
 from typing import Any
 
+from rich.console import Console
+
 from agenteverywhereflow.actions.coords import CoordinateProjector
 from agenteverywhereflow.actions.driver import driver
 from agenteverywhereflow.capturer import get_capturer
@@ -21,6 +23,7 @@ class PythonReplEngine(BaseExecutionEngine):
 
     def __init__(self) -> None:
         self.capturer = get_capturer()
+        self.console = Console(file=sys.__stdout__)
 
     def _build_context(self, target: TargetInfo) -> dict[str, Any]:
         """Construct the sandbox globals injected into Python code."""
@@ -36,6 +39,10 @@ class PythonReplEngine(BaseExecutionEngine):
 
         def click(x: float, y: float, button: str = "left", clicks: int = 1) -> None:
             sx, sy = _resolve_coords(x, y)
+            self.console.print(
+                f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]click[/bold cyan](x={int(x)}, y={int(y)}) "
+                f"[dim]──▶ Screen: ({sx}, {sy}) [button={button}, clicks={clicks}][/dim]"
+            )
             driver.click(
                 x=sx,
                 y=sy,
@@ -48,26 +55,57 @@ class PythonReplEngine(BaseExecutionEngine):
 
         def move(x: float, y: float) -> None:
             sx, sy = _resolve_coords(x, y)
+            self.console.print(
+                f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]move[/bold cyan](x={int(x)}, y={int(y)}) "
+                f"[dim]──▶ Screen: ({sx}, {sy})[/dim]"
+            )
             driver.move_to(x=sx, y=sy)
 
         def double_click(x: float, y: float) -> None:
             sx, sy = _resolve_coords(x, y)
+            self.console.print(
+                f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]double_click[/bold cyan](x={int(x)}, y={int(y)}) "
+                f"[dim]──▶ Screen: ({sx}, {sy})[/dim]"
+            )
             driver.double_click(x=sx, y=sy, window_handle=target.native_handle)
 
         def right_click(x: float, y: float) -> None:
             sx, sy = _resolve_coords(x, y)
+            self.console.print(
+                f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]right_click[/bold cyan](x={int(x)}, y={int(y)}) "
+                f"[dim]──▶ Screen: ({sx}, {sy})[/dim]"
+            )
             driver.right_click(x=sx, y=sy, window_handle=target.native_handle)
 
         def type_text(text: str) -> None:
+            method_desc = (
+                "Clipboard Injection (Ctrl+V)"
+                if (any(ord(c) > 127 for c in text) or sys.platform == "win32")
+                else "Keyboard Emulation"
+            )
+            self.console.print(
+                f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]type_text[/bold cyan]({repr(text)}) "
+                f"[dim]──▶ Method: {method_desc}[/dim]"
+            )
             driver.type_text(text, window_handle=target.native_handle)
 
         def press(key: str) -> None:
+            self.console.print(
+                f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]press[/bold cyan]({repr(key)})"
+            )
             driver.press_key(key, window_handle=target.native_handle)
 
         def hotkey(*keys: str) -> None:
+            self.console.print(
+                f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]hotkey[/bold cyan]({', '.join(repr(k) for k in keys)})"
+            )
             driver.hotkey(*keys, window_handle=target.native_handle)
 
         def scroll(amount: int, x: float | None = None, y: float | None = None) -> None:
+            pos_info = f" at ({x}, {y})" if x is not None and y is not None else ""
+            self.console.print(
+                f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]scroll[/bold cyan](amount={amount}{pos_info})"
+            )
             if x is not None and y is not None:
                 sx, sy = _resolve_coords(x, y)
                 driver.scroll(amount, x=sx, y=sy)
@@ -75,9 +113,15 @@ class PythonReplEngine(BaseExecutionEngine):
                 driver.scroll(amount)
 
         def wait(seconds: float) -> None:
+            self.console.print(
+                f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]wait[/bold cyan]({seconds}s)"
+            )
             driver.wait(seconds)
 
         def screenshot() -> Any:
+            self.console.print(
+                "  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]screenshot[/bold cyan]()"
+            )
             return self.capturer.capture(target)
 
         return {

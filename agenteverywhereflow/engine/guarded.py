@@ -16,7 +16,9 @@ class GuardedActionEngine(BaseExecutionEngine):
     """Executes atomic, strictly validated tool calls with permission gates."""
 
     def __init__(self) -> None:
-        self.console = Console()
+        import sys
+
+        self.console = Console(file=sys.__stdout__)
 
     def execute(
         self, payload: dict[str, Any], target: TargetInfo, **kwargs: Any
@@ -31,6 +33,8 @@ class GuardedActionEngine(BaseExecutionEngine):
             {"action": "scroll", "amount": -5}
             {"action": "wait", "seconds": 1.0}
         """
+        import sys
+
         action = payload.get("action", "").lower()
         if not action:
             return ExecutionResult(success=False, error="No action specified in payload")
@@ -58,6 +62,10 @@ class GuardedActionEngine(BaseExecutionEngine):
                 sx, sy = CoordinateProjector.to_screen_coords(
                     target, x, y, img_width=target.rect.width, img_height=target.rect.height
                 )
+                self.console.print(
+                    f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]click[/bold cyan](x={int(x)}, y={int(y)}) "
+                    f"[dim]──▶ Screen: ({sx}, {sy}) [button={button}, clicks={clicks}][/dim]"
+                )
                 driver.click(
                     x=sx,
                     y=sy,
@@ -75,39 +83,68 @@ class GuardedActionEngine(BaseExecutionEngine):
                 sx, sy = CoordinateProjector.to_screen_coords(
                     target, x, y, img_width=target.rect.width, img_height=target.rect.height
                 )
+                self.console.print(
+                    f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]move[/bold cyan](x={int(x)}, y={int(y)}) "
+                    f"[dim]──▶ Screen: ({sx}, {sy})[/dim]"
+                )
                 driver.move_to(sx, sy)
                 return ExecutionResult(success=True, output=f"Moved to ({sx}, {sy})")
 
             elif action == "type":
                 text = str(payload.get("text", ""))
+                method_desc = (
+                    "Clipboard Injection (Ctrl+V)"
+                    if (any(ord(c) > 127 for c in text) or sys.platform == "win32")
+                    else "Keyboard Emulation"
+                )
+                self.console.print(
+                    f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]type_text[/bold cyan]({repr(text)}) "
+                    f"[dim]──▶ Method: {method_desc}[/dim]"
+                )
                 driver.type_text(text, window_handle=target.native_handle)
                 return ExecutionResult(success=True, output=f"Typed text: {text}")
 
             elif action == "press":
                 key = str(payload.get("key", ""))
+                self.console.print(
+                    f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]press[/bold cyan]({repr(key)})"
+                )
                 driver.press_key(key, window_handle=target.native_handle)
                 return ExecutionResult(success=True, output=f"Pressed key: {key}")
 
             elif action == "hotkey":
                 keys = payload.get("keys", [])
+                self.console.print(
+                    f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]hotkey[/bold cyan]({', '.join(repr(k) for k in keys)})"
+                )
                 driver.hotkey(*keys, window_handle=target.native_handle)
                 return ExecutionResult(success=True, output=f"Sent hotkey: {keys}")
 
             elif action == "scroll":
                 amount = int(payload.get("amount", 0))
+                self.console.print(
+                    f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]scroll[/bold cyan](amount={amount})"
+                )
                 driver.scroll(amount)
                 return ExecutionResult(success=True, output=f"Scrolled {amount}")
 
             elif action == "wait":
                 seconds = float(payload.get("seconds", 1.0))
+                self.console.print(
+                    f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]wait[/bold cyan]({seconds}s)"
+                )
                 driver.wait(seconds)
                 return ExecutionResult(success=True, output=f"Waited {seconds}s")
 
             elif action == "finish":
+                msg = payload.get("message", "")
+                self.console.print(
+                    f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold green]finish[/bold green]({repr(msg)})"
+                )
                 return ExecutionResult(
                     success=True,
                     output="Task marked as completed.",
-                    data={"finished": True, "message": payload.get("message", "")},
+                    data={"finished": True, "message": msg},
                 )
 
             else:

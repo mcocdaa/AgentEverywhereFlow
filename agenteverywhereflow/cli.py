@@ -53,10 +53,17 @@ def summon(
         "-m",
         help="Execution mode (minimal: Python REPL / guarded: atomic calls)",
     ),
+    debug: bool = typer.Option(
+        False, "--debug", "-d", help="Enable verbose debug logging and diagnostics"
+    ),
 ) -> None:
     """Interactive screen-share style target picker and agent summoner."""
     from agenteverywhereflow.agent.loop import AgentLoop
     from agenteverywhereflow.capturer.selector import TargetSelector
+    from agenteverywhereflow.config import config
+
+    if debug:
+        config.debug = True
 
     selector = TargetSelector()
     target = selector.interactive_select()
@@ -88,11 +95,20 @@ def run(
     mode: ExecutionMode = typer.Option(
         ExecutionMode.MINIMAL_PYTHON, "--mode", "-m", help="Execution mode"
     ),
+    debug: bool = typer.Option(
+        False, "--debug", "-d", help="Enable verbose debug logging and diagnostics"
+    ),
 ) -> None:
     """Directly summon agent onto a matching display or window."""
+    from rich.panel import Panel
+
     from agenteverywhereflow.agent.loop import AgentLoop
     from agenteverywhereflow.capturer import get_capturer
     from agenteverywhereflow.capturer.selector import resolve_target
+    from agenteverywhereflow.config import config
+
+    if debug:
+        config.debug = True
 
     capturer = get_capturer()
     all_targets = capturer.list_targets()
@@ -105,6 +121,22 @@ def run(
             "[dim]Tip: Run 'aef list-targets' to view all available Target IDs, handles, and indices.[/dim]"
         )
         raise typer.Exit(1)
+
+    if debug:
+        handle_hex = f"0x{selected.native_handle:x}" if selected.native_handle else "N/A"
+        console.print(
+            Panel(
+                f"[bold cyan]Query:[/bold cyan] {target_query}\n"
+                f"[bold cyan]Matched Target:[/bold cyan] {selected.title}\n"
+                f"[bold cyan]Target ID:[/bold cyan] {selected.target_id}\n"
+                f"[bold cyan]Native Handle:[/bold cyan] {handle_hex} ({selected.native_handle})\n"
+                f"[bold cyan]Bounds:[/bold cyan] ({selected.rect.x}, {selected.rect.y}, {selected.rect.width}, {selected.rect.height})\n"
+                f"[bold cyan]Process Name:[/bold cyan] {selected.process_name or 'N/A'}\n"
+                f"[bold cyan]Is Minimized:[/bold cyan] {selected.is_minimized}",
+                title="🔍 Target Diagnostics (Debug Mode)",
+                border_style="magenta",
+            )
+        )
 
     loop = AgentLoop()
     loop.run(target=selected, user_task=task, mode=mode)

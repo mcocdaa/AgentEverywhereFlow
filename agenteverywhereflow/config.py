@@ -36,6 +36,12 @@ class AppConfig(BaseSettings):
         description="Require interactive confirmation for potentially destructive operations",
     )
 
+    # Diagnostic & Debug settings
+    debug: bool = Field(
+        default=False,
+        description="Enable verbose debug logging and execution diagnostics",
+    )
+
     # UI & Hotkey settings
     summon_hotkey: str = Field(default="ctrl+shift+a", description="Global hotkey to summon HUD")
     screenshot_dir: Path = Field(

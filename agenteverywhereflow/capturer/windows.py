@@ -264,16 +264,27 @@ class WindowsCapturer(BaseCapturer):
         if is_windows and target.native_handle:
             hwnd = target.native_handle
             try:
+                import sys
                 import time
 
+                from rich.console import Console
+
+                from agenteverywhereflow.config import config
+
                 # 1. Restore if minimized
-                if win32gui.IsIconic(hwnd):
+                is_iconic = win32gui.IsIconic(hwnd)
+                if is_iconic:
                     win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
                 else:
                     win32gui.ShowWindow(hwnd, win32con.SW_SHOW)
 
                 # 2. AttachThreadInput trick to bypass Windows SetForegroundWindow lock
                 fore_hwnd = win32gui.GetForegroundWindow()
+                if config.debug:
+                    Console(file=sys.__stdout__).print(
+                        f"[dim magenta]  [DEBUG-WIN32] focus(): target=0x{hwnd:x}, fore_hwnd=0x{fore_hwnd:x}, is_iconic={is_iconic}[/dim magenta]"
+                    )
+
                 if fore_hwnd != hwnd:
                     fore_thread, _ = win32process.GetWindowThreadProcessId(fore_hwnd)
                     cur_thread = win32process.GetCurrentThreadId()
@@ -296,7 +307,17 @@ class WindowsCapturer(BaseCapturer):
 
                 time.sleep(0.08)
                 return True
-            except Exception:
+            except Exception as e:
+                import sys
+
+                from rich.console import Console
+
+                from agenteverywhereflow.config import config
+
+                if config.debug:
+                    Console(file=sys.__stdout__).print(
+                        f"[bold red]  [DEBUG-WIN32] AttachThreadInput focus failed: {e}, fallback SetForegroundWindow[/bold red]"
+                    )
                 try:
                     win32gui.SetForegroundWindow(hwnd)
                     return True
