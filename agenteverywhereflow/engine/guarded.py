@@ -16,9 +16,13 @@ class GuardedActionEngine(BaseExecutionEngine):
     """Executes atomic, strictly validated tool calls with permission gates."""
 
     def __init__(self) -> None:
-        import sys
+        self.console = Console()
 
-        self.console = Console(file=sys.__stdout__)
+    def _print_action(self, text: str) -> None:
+        try:
+            self.console.print(text)
+        except Exception:
+            pass
 
     def execute(
         self, payload: dict[str, Any], target: TargetInfo, **kwargs: Any
@@ -41,7 +45,7 @@ class GuardedActionEngine(BaseExecutionEngine):
 
         # 1. Safety Guard Check
         if config.require_human_confirmation or self._is_sensitive_action(payload):
-            self.console.print(
+            self._print_action(
                 f"[bold yellow]⚠️ Safety Gate:[/bold yellow] Agent requests action: [cyan]{payload}[/cyan]"
             )
             confirmed = Confirm.ask("Allow this action to execute?", default=True)
@@ -62,7 +66,7 @@ class GuardedActionEngine(BaseExecutionEngine):
                 sx, sy = CoordinateProjector.to_screen_coords(
                     target, x, y, img_width=target.rect.width, img_height=target.rect.height
                 )
-                self.console.print(
+                self._print_action(
                     f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]click[/bold cyan](x={int(x)}, y={int(y)}) "
                     f"[dim]──▶ Screen: ({sx}, {sy}) [button={button}, clicks={clicks}][/dim]"
                 )
@@ -83,7 +87,7 @@ class GuardedActionEngine(BaseExecutionEngine):
                 sx, sy = CoordinateProjector.to_screen_coords(
                     target, x, y, img_width=target.rect.width, img_height=target.rect.height
                 )
-                self.console.print(
+                self._print_action(
                     f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]move[/bold cyan](x={int(x)}, y={int(y)}) "
                     f"[dim]──▶ Screen: ({sx}, {sy})[/dim]"
                 )
@@ -97,7 +101,7 @@ class GuardedActionEngine(BaseExecutionEngine):
                     if (any(ord(c) > 127 for c in text) or sys.platform == "win32")
                     else "Keyboard Emulation"
                 )
-                self.console.print(
+                self._print_action(
                     f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]type_text[/bold cyan]({repr(text)}) "
                     f"[dim]──▶ Method: {method_desc}[/dim]"
                 )
@@ -106,7 +110,7 @@ class GuardedActionEngine(BaseExecutionEngine):
 
             elif action == "press":
                 key = str(payload.get("key", ""))
-                self.console.print(
+                self._print_action(
                     f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]press[/bold cyan]({repr(key)})"
                 )
                 driver.press_key(key, window_handle=target.native_handle)
@@ -114,7 +118,7 @@ class GuardedActionEngine(BaseExecutionEngine):
 
             elif action == "hotkey":
                 keys = payload.get("keys", [])
-                self.console.print(
+                self._print_action(
                     f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]hotkey[/bold cyan]({', '.join(repr(k) for k in keys)})"
                 )
                 driver.hotkey(*keys, window_handle=target.native_handle)
@@ -122,7 +126,7 @@ class GuardedActionEngine(BaseExecutionEngine):
 
             elif action == "scroll":
                 amount = int(payload.get("amount", 0))
-                self.console.print(
+                self._print_action(
                     f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]scroll[/bold cyan](amount={amount})"
                 )
                 driver.scroll(amount)
@@ -130,7 +134,7 @@ class GuardedActionEngine(BaseExecutionEngine):
 
             elif action == "wait":
                 seconds = float(payload.get("seconds", 1.0))
-                self.console.print(
+                self._print_action(
                     f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]wait[/bold cyan]({seconds}s)"
                 )
                 driver.wait(seconds)
@@ -138,7 +142,7 @@ class GuardedActionEngine(BaseExecutionEngine):
 
             elif action == "finish":
                 msg = payload.get("message", "")
-                self.console.print(
+                self._print_action(
                     f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold green]finish[/bold green]({repr(msg)})"
                 )
                 return ExecutionResult(
