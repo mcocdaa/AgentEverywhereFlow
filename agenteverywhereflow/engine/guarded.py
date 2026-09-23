@@ -55,7 +55,15 @@ class GuardedActionEngine(BaseExecutionEngine):
                 sx, sy = CoordinateProjector.to_screen_coords(
                     target, x, y, img_width=target.rect.width, img_height=target.rect.height
                 )
-                driver.click(x=sx, y=sy, button=button, clicks=clicks)  # type: ignore
+                driver.click(
+                    x=sx,
+                    y=sy,
+                    button=button,  # type: ignore
+                    clicks=clicks,
+                    window_handle=target.native_handle,
+                    window_rel_x=int(x),
+                    window_rel_y=int(y),
+                )
                 return ExecutionResult(success=True, output=f"Clicked at ({sx}, {sy})")
 
             elif action == "move":
@@ -69,7 +77,7 @@ class GuardedActionEngine(BaseExecutionEngine):
 
             elif action == "type":
                 text = str(payload.get("text", ""))
-                driver.type_text(text)
+                driver.type_text(text, window_handle=target.native_handle)
                 return ExecutionResult(success=True, output=f"Typed text: {text}")
 
             elif action == "press":

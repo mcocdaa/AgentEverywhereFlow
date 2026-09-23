@@ -36,7 +36,15 @@ class PythonReplEngine(BaseExecutionEngine):
 
         def click(x: float, y: float, button: str = "left", clicks: int = 1) -> None:
             sx, sy = _resolve_coords(x, y)
-            driver.click(x=sx, y=sy, button=button, clicks=clicks)  # type: ignore
+            driver.click(
+                x=sx,
+                y=sy,
+                button=button,  # type: ignore
+                clicks=clicks,
+                window_handle=target.native_handle,
+                window_rel_x=int(x),
+                window_rel_y=int(y),
+            )
 
         def move(x: float, y: float) -> None:
             sx, sy = _resolve_coords(x, y)
@@ -44,14 +52,14 @@ class PythonReplEngine(BaseExecutionEngine):
 
         def double_click(x: float, y: float) -> None:
             sx, sy = _resolve_coords(x, y)
-            driver.double_click(x=sx, y=sy)
+            driver.double_click(x=sx, y=sy, window_handle=target.native_handle)
 
         def right_click(x: float, y: float) -> None:
             sx, sy = _resolve_coords(x, y)
-            driver.right_click(x=sx, y=sy)
+            driver.right_click(x=sx, y=sy, window_handle=target.native_handle)
 
         def type_text(text: str) -> None:
-            driver.type_text(text)
+            driver.type_text(text, window_handle=target.native_handle)
 
         def press(key: str) -> None:
             driver.press_key(key)
