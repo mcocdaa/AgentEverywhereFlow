@@ -1,6 +1,7 @@
 """Control Execution Mode: Guarded atomic tool calls with safety intercepts."""
 
 from typing import Any
+
 from rich.console import Console
 from rich.prompt import Confirm
 
@@ -17,7 +18,9 @@ class GuardedActionEngine(BaseExecutionEngine):
     def __init__(self) -> None:
         self.console = Console()
 
-    def execute(self, payload: dict[str, Any], target: TargetInfo, **kwargs: Any) -> ExecutionResult:
+    def execute(
+        self, payload: dict[str, Any], target: TargetInfo, **kwargs: Any
+    ) -> ExecutionResult:
         """Execute a structured action object.
 
         Payload format:

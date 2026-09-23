@@ -8,7 +8,7 @@ from agenteverywhereflow import __version__
 from agenteverywhereflow.agent.loop import AgentLoop
 from agenteverywhereflow.capturer import get_capturer
 from agenteverywhereflow.capturer.selector import TargetSelector
-from agenteverywhereflow.config import ExecutionMode, config
+from agenteverywhereflow.config import ExecutionMode
 
 app = typer.Typer(
     name="aef",
@@ -62,7 +62,9 @@ def summon(
         raise typer.Exit(0)
 
     if not task:
-        task = console.input("[bold green]📝 Enter task for Agent to accomplish: [/bold green]").strip()
+        task = console.input(
+            "[bold green]📝 Enter task for Agent to accomplish: [/bold green]"
+        ).strip()
         if not task:
             console.print("[yellow]No task provided, aborting.[/yellow]")
             raise typer.Exit(0)

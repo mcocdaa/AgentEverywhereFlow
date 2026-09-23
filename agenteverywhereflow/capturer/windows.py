@@ -9,8 +9,9 @@ Supports:
 
 import sys
 from typing import Any
-from PIL import Image
+
 import mss
+from PIL import Image
 
 from agenteverywhereflow.capturer.base import BaseCapturer, Rect, TargetInfo, TargetType
 
@@ -19,9 +20,10 @@ is_windows = sys.platform == "win32"
 if is_windows:
     import ctypes
     from ctypes import wintypes
+
+    import win32con
     import win32gui
     import win32process
-    import win32con
     import win32ui
 else:
     ctypes = None  # type: ignore
@@ -44,10 +46,10 @@ class WindowsCapturer(BaseCapturer):
             return
         try:
             # PROCESS_PER_MONITOR_DPI_AWARE_V2 = 2
-            ctypes.windll.shcore.SetProcessDpiAwareness(2)
+            ctypes.windll.shcore.SetProcessDpiAwareness(2)  # type: ignore[attr-defined]
         except Exception:
             try:
-                ctypes.windll.user32.SetProcessDPIAware()
+                ctypes.windll.user32.SetProcessDPIAware()  # type: ignore[attr-defined]
             except Exception:
                 pass
 
@@ -106,7 +108,7 @@ class WindowsCapturer(BaseCapturer):
             # Exclude cloaked windows (e.g. UWP suspended apps, background store apps)
             DWMWA_CLOAKED = 14
             is_cloaked = ctypes.c_int(0)
-            ctypes.windll.dwmapi.DwmGetWindowAttribute(
+            ctypes.windll.dwmapi.DwmGetWindowAttribute(  # type: ignore[attr-defined]
                 hwnd,
                 DWMWA_CLOAKED,
                 ctypes.byref(is_cloaked),
@@ -129,6 +131,7 @@ class WindowsCapturer(BaseCapturer):
             proc_name = ""
             try:
                 import psutil
+
                 proc = psutil.Process(pid)
                 proc_name = proc.name()
             except Exception:
@@ -180,7 +183,7 @@ class WindowsCapturer(BaseCapturer):
                 save_bitmap.CreateCompatibleBitmap(mfc_dc, width, height)
                 save_dc.SelectObject(save_bitmap)
 
-                ctypes.windll.user32.PrintWindow(hwnd, save_dc.GetSafeHdc(), PW_RENDERFULLCONTENT)
+                ctypes.windll.user32.PrintWindow(hwnd, save_dc.GetSafeHdc(), PW_RENDERFULLCONTENT)  # type: ignore[attr-defined]
 
                 bmpinfo = save_bitmap.GetInfo()
                 bmpstr = save_bitmap.GetBitmapBits(True)

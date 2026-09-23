@@ -5,11 +5,11 @@ import io
 import json
 import re
 from typing import Any
+
 from openai import OpenAI
 from PIL import Image
 from rich.console import Console
 from rich.panel import Panel
-from rich.table import Table
 
 from agenteverywhereflow.agent.prompts import get_prompt_for_target
 from agenteverywhereflow.capturer import get_capturer
@@ -128,7 +128,7 @@ class AgentLoop:
                 try:
                     response = self.client.chat.completions.create(
                         model=self.config.model_name,
-                        messages=messages,
+                        messages=messages,  # type: ignore[arg-type]
                         temperature=0.2,
                     )
                     assistant_text = response.choices[0].message.content or ""

@@ -1,6 +1,7 @@
 """Tests for VisionPipeline (Coordinate Grid and SoM element detection)."""
 
 from PIL import Image, ImageDraw
+
 from agenteverywhereflow.agent.vision import VisionPipeline
 
 

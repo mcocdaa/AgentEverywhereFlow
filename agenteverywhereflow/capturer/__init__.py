@@ -1,6 +1,7 @@
 """Capturer package and factory."""
 
 import sys
+
 from agenteverywhereflow.capturer.base import BaseCapturer, Rect, TargetInfo, TargetType
 from agenteverywhereflow.capturer.linux import LinuxCapturer
 from agenteverywhereflow.capturer.windows import WindowsCapturer

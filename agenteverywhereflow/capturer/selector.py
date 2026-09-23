@@ -60,9 +60,7 @@ class TargetSelector:
         """Prompt user in terminal to pick a display or window target."""
         targets = self.list_all()
         if not targets:
-            self.console.print(
-                Panel("[red]No displays or windows detected![/red]", title="Error")
-            )
+            self.console.print(Panel("[red]No displays or windows detected![/red]", title="Error"))
             return None
 
         self.display_selection_menu(targets)
@@ -79,9 +77,7 @@ class TargetSelector:
                 idx = int(choice)
                 if 1 <= idx <= len(targets):
                     selected = targets[idx - 1]
-                    self.console.print(
-                        f"[bold green]✓ Target selected:[/bold green] {selected}"
-                    )
+                    self.console.print(f"[bold green]✓ Target selected:[/bold green] {selected}")
                     return selected
 
             self.console.print(

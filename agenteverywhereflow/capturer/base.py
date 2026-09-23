@@ -1,20 +1,23 @@
 """Base abstractions for screen and window capture."""
 
 from abc import ABC, abstractmethod
-from enum import Enum
+from enum import StrEnum
 from typing import NamedTuple
+
 from PIL import Image
 from pydantic import BaseModel, Field
 
 
-class TargetType(str, Enum):
+class TargetType(StrEnum):
     """Type of the captured target."""
+
     DISPLAY = "display"  # Full screen / physical monitor
-    WINDOW = "window"    # Dedicated application window
+    WINDOW = "window"  # Dedicated application window
 
 
 class Rect(NamedTuple):
     """Bounding box coordinates (x, y, width, height)."""
+
     x: int
     y: int
     width: int
@@ -23,6 +26,7 @@ class Rect(NamedTuple):
 
 class TargetInfo(BaseModel):
     """Metadata describing a screen or window target."""
+
     target_id: str = Field(description="Unique ID, e.g. 'display:0' or 'hwnd:12345'")
     target_type: TargetType = Field(description="Target classification")
     title: str = Field(description="Human readable title or display description")
@@ -40,7 +44,9 @@ class BaseCapturer(ABC):
     """Abstract base class for OS-level window and display capture."""
 
     @abstractmethod
-    def list_targets(self, include_displays: bool = True, include_windows: bool = True) -> list[TargetInfo]:
+    def list_targets(
+        self, include_displays: bool = True, include_windows: bool = True
+    ) -> list[TargetInfo]:
         """Enumerate all available displays and top-level active windows."""
         pass
 

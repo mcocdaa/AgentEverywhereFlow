@@ -1,13 +1,15 @@
 """Configuration management for AgentEverywhereFlow."""
 
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-class ExecutionMode(str, Enum):
+class ExecutionMode(StrEnum):
     """Execution mode for agent actions."""
+
     MINIMAL_PYTHON = "minimal"  # Python CodeAct REPL toolcall
     CONTROL_GUARDED = "guarded"  # Granular function calls with permission gate
 

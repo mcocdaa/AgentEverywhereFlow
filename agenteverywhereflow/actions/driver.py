@@ -21,6 +21,7 @@ class InputDriver:
         if self._gui_backend is None:
             try:
                 import pyautogui
+
                 pyautogui.PAUSE = 0.05
                 pyautogui.FAILSAFE = False
                 self._gui_backend = pyautogui
@@ -37,6 +38,7 @@ class InputDriver:
         if sys.platform.startswith("linux") and self._x11_display is None:
             try:
                 from Xlib import display
+
                 self._x11_display = display.Display()
             except Exception:
                 self._x11_display = False
@@ -90,7 +92,11 @@ class InputDriver:
                 from Xlib.protocol import event
 
                 btn_code = 1 if button == "left" else (3 if button == "right" else 2)
-                btn_mask = X.Button1Mask if button == "left" else (X.Button3Mask if button == "right" else X.Button2Mask)
+                btn_mask = (
+                    X.Button1Mask
+                    if button == "left"
+                    else (X.Button3Mask if button == "right" else X.Button2Mask)
+                )
 
                 parent_win = x_disp.create_resource_object("window", window_handle)
                 target_win, local_x, local_y = self._find_x11_child_at(
@@ -158,11 +164,15 @@ class InputDriver:
             else:
                 backend.click(button=button, clicks=clicks)
 
-    def double_click(self, x: int | None = None, y: int | None = None, window_handle: int = 0) -> None:
+    def double_click(
+        self, x: int | None = None, y: int | None = None, window_handle: int = 0
+    ) -> None:
         """Perform a double click."""
         self.click(x=x, y=y, button="left", clicks=2, window_handle=window_handle)
 
-    def right_click(self, x: int | None = None, y: int | None = None, window_handle: int = 0) -> None:
+    def right_click(
+        self, x: int | None = None, y: int | None = None, window_handle: int = 0
+    ) -> None:
         """Perform a right click."""
         self.click(x=x, y=y, button="right", clicks=1, window_handle=window_handle)
 
@@ -185,7 +195,7 @@ class InputDriver:
         x_disp = self._get_x11_display()
         if x_disp and window_handle > 0:
             try:
-                from Xlib import X, XK
+                from Xlib import XK, X
                 from Xlib.protocol import event
 
                 parent_win = x_disp.create_resource_object("window", window_handle)
@@ -204,8 +214,12 @@ class InputDriver:
                             window=target_win,
                             same_screen=1,
                             child=X.NONE,
-                            root_x=0, root_y=0, event_x=0, event_y=0,
-                            state=state, detail=keycode,
+                            root_x=0,
+                            root_y=0,
+                            event_x=0,
+                            event_y=0,
+                            state=state,
+                            detail=keycode,
                         )
                         target_win.send_event(evt_down, event_mask=X.KeyPressMask)
 
@@ -215,8 +229,12 @@ class InputDriver:
                             window=target_win,
                             same_screen=1,
                             child=X.NONE,
-                            root_x=0, root_y=0, event_x=0, event_y=0,
-                            state=state, detail=keycode,
+                            root_x=0,
+                            root_y=0,
+                            event_x=0,
+                            event_y=0,
+                            state=state,
+                            detail=keycode,
                         )
                         target_win.send_event(evt_up, event_mask=X.KeyReleaseMask)
                 x_disp.flush()
@@ -234,6 +252,7 @@ class InputDriver:
             if sys.platform == "win32":
                 try:
                     import win32clipboard
+
                     win32clipboard.OpenClipboard()
                     win32clipboard.EmptyClipboard()
                     win32clipboard.SetClipboardText(text)
@@ -249,7 +268,7 @@ class InputDriver:
         x_disp = self._get_x11_display()
         if x_disp and window_handle > 0:
             try:
-                from Xlib import X, XK
+                from Xlib import XK, X
                 from Xlib.protocol import event
 
                 key_map = {
@@ -270,16 +289,32 @@ class InputDriver:
                     target_win = self._get_x11_active_input_window(x_disp, parent_win)
 
                     evt_down = event.KeyPress(
-                        time=X.CurrentTime, root=x_disp.screen().root, window=target_win,
-                        same_screen=1, child=X.NONE, root_x=0, root_y=0, event_x=0, event_y=0,
-                        state=0, detail=keycode,
+                        time=X.CurrentTime,
+                        root=x_disp.screen().root,
+                        window=target_win,
+                        same_screen=1,
+                        child=X.NONE,
+                        root_x=0,
+                        root_y=0,
+                        event_x=0,
+                        event_y=0,
+                        state=0,
+                        detail=keycode,
                     )
                     target_win.send_event(evt_down, event_mask=X.KeyPressMask)
 
                     evt_up = event.KeyRelease(
-                        time=X.CurrentTime, root=x_disp.screen().root, window=target_win,
-                        same_screen=1, child=X.NONE, root_x=0, root_y=0, event_x=0, event_y=0,
-                        state=0, detail=keycode,
+                        time=X.CurrentTime,
+                        root=x_disp.screen().root,
+                        window=target_win,
+                        same_screen=1,
+                        child=X.NONE,
+                        root_x=0,
+                        root_y=0,
+                        event_x=0,
+                        event_y=0,
+                        state=0,
+                        detail=keycode,
                     )
                     target_win.send_event(evt_up, event_mask=X.KeyReleaseMask)
                     x_disp.flush()
@@ -296,7 +331,7 @@ class InputDriver:
         x_disp = self._get_x11_display()
         if x_disp and window_handle > 0:
             try:
-                from Xlib import X, XK
+                from Xlib import XK, X
                 from Xlib.protocol import event
 
                 # Handle ctrl+key combos
@@ -316,16 +351,32 @@ class InputDriver:
                 if keysym:
                     keycode = x_disp.keysym_to_keycode(keysym)
                     evt_down = event.KeyPress(
-                        time=X.CurrentTime, root=x_disp.screen().root, window=target_win,
-                        same_screen=1, child=X.NONE, root_x=0, root_y=0, event_x=0, event_y=0,
-                        state=state, detail=keycode,
+                        time=X.CurrentTime,
+                        root=x_disp.screen().root,
+                        window=target_win,
+                        same_screen=1,
+                        child=X.NONE,
+                        root_x=0,
+                        root_y=0,
+                        event_x=0,
+                        event_y=0,
+                        state=state,
+                        detail=keycode,
                     )
                     target_win.send_event(evt_down, event_mask=X.KeyPressMask)
 
                     evt_up = event.KeyRelease(
-                        time=X.CurrentTime, root=x_disp.screen().root, window=target_win,
-                        same_screen=1, child=X.NONE, root_x=0, root_y=0, event_x=0, event_y=0,
-                        state=state, detail=keycode,
+                        time=X.CurrentTime,
+                        root=x_disp.screen().root,
+                        window=target_win,
+                        same_screen=1,
+                        child=X.NONE,
+                        root_x=0,
+                        root_y=0,
+                        event_x=0,
+                        event_y=0,
+                        state=state,
+                        detail=keycode,
                     )
                     target_win.send_event(evt_up, event_mask=X.KeyReleaseMask)
                     x_disp.flush()

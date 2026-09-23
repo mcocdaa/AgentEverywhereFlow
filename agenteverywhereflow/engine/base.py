@@ -2,6 +2,7 @@
 
 from abc import ABC, abstractmethod
 from typing import Any
+
 from pydantic import BaseModel, Field
 
 from agenteverywhereflow.capturer.base import TargetInfo
@@ -9,6 +10,7 @@ from agenteverywhereflow.capturer.base import TargetInfo
 
 class ExecutionResult(BaseModel):
     """Result of an action or script execution."""
+
     success: bool
     output: str = ""
     error: str = ""

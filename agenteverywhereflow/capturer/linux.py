@@ -2,8 +2,9 @@
 
 import shutil
 import subprocess
-from PIL import Image
+
 import mss
+from PIL import Image
 
 from agenteverywhereflow.capturer.base import BaseCapturer, Rect, TargetInfo, TargetType
 
@@ -90,26 +91,37 @@ class LinuxCapturer(BaseCapturer):
         # 1. If target is a specific window with native X11 handle, capture directly
         if target.target_type == TargetType.WINDOW and target.native_handle > 0:
             try:
-                from Xlib import display, X
+                from Xlib import X, display
+
                 d = display.Display()
                 win = d.create_resource_object("window", target.native_handle)
                 geom = win.get_geometry()
-                raw = win.get_image(0, 0, geom.width, geom.height, X.ZPixmap, 0xffffffff)
+                raw = win.get_image(0, 0, geom.width, geom.height, X.ZPixmap, 0xFFFFFFFF)
                 if raw and raw.data:
-                    return Image.frombytes("RGB", (geom.width, geom.height), raw.data, "raw", "BGRX")
+                    return Image.frombytes(
+                        "RGB", (geom.width, geom.height), raw.data, "raw", "BGRX"
+                    )
             except Exception:
                 pass
 
         # 2. Display or fallback to mss
-        with mss.mss() as sct:
-            monitor = {
-                "top": target.rect.y,
-                "left": target.rect.x,
-                "width": max(1, target.rect.width),
-                "height": max(1, target.rect.height),
-            }
-            sct_img = sct.grab(monitor)
-            return Image.frombytes("RGB", sct_img.size, sct_img.bgra, "raw", "BGRX")
+        try:
+            with mss.mss() as sct:
+                monitor = {
+                    "top": target.rect.y,
+                    "left": target.rect.x,
+                    "width": max(1, target.rect.width),
+                    "height": max(1, target.rect.height),
+                }
+                sct_img = sct.grab(monitor)
+                return Image.frombytes("RGB", sct_img.size, sct_img.bgra, "raw", "BGRX")
+        except Exception:
+            pass
+
+        # 3. Fallback to blank placeholder canvas (e.g. rootless XWayland without root drawable)
+        w = max(1, target.rect.width)
+        h = max(1, target.rect.height)
+        return Image.new("RGB", (w, h), color=(30, 30, 30))
 
     def focus(self, target: TargetInfo) -> bool:
         if target.target_type == TargetType.DISPLAY:

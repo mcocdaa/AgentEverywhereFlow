@@ -7,14 +7,16 @@ Includes:
 """
 
 from typing import NamedTuple
+
 from PIL import Image, ImageDraw
 
 
 class DetectedElement(NamedTuple):
     """An interactive UI element candidate detected in the viewport."""
+
     element_id: int
     bbox: tuple[int, int, int, int]  # (x1, y1, x2, y2)
-    center: tuple[int, int]          # (cx, cy)
+    center: tuple[int, int]  # (cx, cy)
     area: int
 
 
@@ -111,9 +113,9 @@ class VisionPipeline:
         gray = img.convert("L")
         width, height = gray.size
         if hasattr(gray, "get_flattened_data"):
-            pixels = list(gray.get_flattened_data())
+            pixels: list[int] = [int(p) for p in gray.get_flattened_data()]  # type: ignore[arg-type]
         else:
-            pixels = list(gray.getdata())
+            pixels = [int(p) for p in gray.getdata()]  # type: ignore[attr-defined, arg-type]
 
         total_area = width * height
         max_allowed_area = int(total_area * max_area_ratio)
@@ -182,10 +184,10 @@ class VisionPipeline:
         id_to_coords: dict[int, tuple[int, int]] = {}
 
         palette = [
-            (230, 57, 70, 220),   # Red
-            (0, 119, 182, 220),   # Blue
+            (230, 57, 70, 220),  # Red
+            (0, 119, 182, 220),  # Blue
             (42, 157, 143, 220),  # Teal Green
-            (217, 119, 6, 220),   # Amber
+            (217, 119, 6, 220),  # Amber
             (124, 58, 237, 220),  # Violet
         ]
 
