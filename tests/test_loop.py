@@ -76,3 +76,46 @@ def test_loop_debug_mode_diagnostics():
         )
 
     assert success is True
+
+
+def test_loop_prunes_older_visual_history():
+    cfg = AppConfig(max_visual_history_images=2)
+    loop = AgentLoop(app_config=cfg)
+
+    # Construct 4 messages with image_url
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "Turn 1"},
+                {"type": "image_url", "image_url": {"url": "data:img1"}},
+            ],
+        },
+        {"role": "assistant", "content": "Ok 1"},
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "Turn 2"},
+                {"type": "image_url", "image_url": {"url": "data:img2"}},
+            ],
+        },
+        {"role": "assistant", "content": "Ok 2"},
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "Turn 3"},
+                {"type": "image_url", "image_url": {"url": "data:img3"}},
+            ],
+        },
+    ]
+
+    pruned = loop._prune_visual_history(messages)
+
+    # First turn's image_url should be replaced with text placeholder
+    turn1_content = pruned[0]["content"]
+    assert any("omitted" in p.get("text", "") for p in turn1_content)
+    assert not any(p.get("type") == "image_url" for p in turn1_content)
+
+    # Turn 2 and 3 should retain their image_url
+    assert any(p.get("type") == "image_url" for p in pruned[2]["content"])
+    assert any(p.get("type") == "image_url" for p in pruned[4]["content"])

@@ -14,6 +14,11 @@ class ExecutionMode(StrEnum):
     CONTROL_GUARDED = "guarded"  # Granular function calls with permission gate
 
 
+def get_default_screenshot_dir() -> Path:
+    """Default cross-platform user directory for screenshots."""
+    return Path.home() / ".aef" / "screenshots"
+
+
 class AppConfig(BaseSettings):
     """Global configuration settings for AEFlow."""
 
@@ -45,8 +50,12 @@ class AppConfig(BaseSettings):
     # UI & Hotkey settings
     summon_hotkey: str = Field(default="ctrl+shift+a", description="Global hotkey to summon HUD")
     screenshot_dir: Path = Field(
-        default=Path("./.aef_cache/screenshots"),
+        default_factory=get_default_screenshot_dir,
         description="Directory for temporary screenshots",
+    )
+    max_visual_history_images: int = Field(
+        default=2,
+        description="Maximum recent screenshots to retain in LLM context to prevent token explosion",
     )
 
     model_config = SettingsConfigDict(

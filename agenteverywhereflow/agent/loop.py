@@ -52,6 +52,45 @@ class AgentLoop:
         img.save(buffer, format="JPEG", quality=85)
         return base64.b64encode(buffer.getvalue()).decode("utf-8")
 
+    def _prune_visual_history(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Prune older historical screenshots from messages to prevent token explosion.
+
+        Retains the most recent N images (default 2), replacing older image payloads
+        with concise textual markers so the conversational history and reasoning are preserved.
+        """
+        keep_n = self.config.max_visual_history_images
+        img_indices: list[int] = []
+
+        for i, msg in enumerate(messages):
+            content = msg.get("content")
+            if isinstance(content, list):
+                for part in content:
+                    if isinstance(part, dict) and part.get("type") == "image_url":
+                        img_indices.append(i)
+                        break
+
+        if len(img_indices) > keep_n:
+            prune_indices = set(img_indices[:-keep_n])
+            for idx in prune_indices:
+                new_content = []
+                for part in messages[idx]["content"]:
+                    if isinstance(part, dict) and part.get("type") == "image_url":
+                        new_content.append(
+                            {
+                                "type": "text",
+                                "text": "[Historical screenshot omitted to conserve context tokens]",
+                            }
+                        )
+                    else:
+                        new_content.append(part)
+                messages[idx]["content"] = new_content
+                if self.config.debug:
+                    self.console.print(
+                        f"[dim magenta]  [DEBUG] Pruned historical screenshot from message turn {idx}[/dim magenta]"
+                    )
+
+        return messages
+
     def run(
         self,
         target: TargetInfo,
@@ -128,6 +167,7 @@ class AgentLoop:
                 ],
             }
             messages.append(step_message)
+            messages = self._prune_visual_history(messages)
 
             # Optionally persist step screenshot for visual audit
             try:
