@@ -15,8 +15,23 @@ keywords = [
     "gui-automation",
     "screen-capture",
     "vision-agent",
-    "workflow"
+    "workflow",
+    "windows",
+    "linux",
 ]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
 dependencies = [
     "pydantic>=2.7.0",
     "pydantic-settings>=2.2.0",
@@ -31,6 +46,13 @@ dependencies = [
     "python-dotenv>=1.0.1",
     "anthropic>=1.8.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/mcocdaa/AgentEverywhereFlow"
+Repository = "https://github.com/mcocdaa/AgentEverywhereFlow.git"
+Issues = "https://github.com/mcocdaa/AgentEverywhereFlow/issues"
+Documentation = "https://github.com/mcocdaa/AgentEverywhereFlow#readme"
+Changelog = "https://github.com/mcocdaa/AgentEverywhereFlow/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 windows = [
