@@ -6,11 +6,11 @@ Covers:
 3. Benchmark 3 (Guarded Mode): Strict JSON atomic actions and keyboard shortcuts.
 """
 
-import sys
 import threading
 import time
 import tkinter as tk
 from pathlib import Path
+
 from Xlib import display
 
 from agenteverywhereflow.agent.loop import AgentLoop
@@ -38,21 +38,39 @@ def run_benchmark_form() -> bool:
         "submitted": False,
     }
 
-    tk.Label(root, text="Employee Onboarding Form", font=("Arial", 14, "bold"), bg="#f8fafc").pack(pady=10)
+    tk.Label(root, text="Employee Onboarding Form", font=("Arial", 14, "bold"), bg="#f8fafc").pack(
+        pady=10
+    )
 
     # Full Name
     f_name = tk.Frame(root, bg="#f8fafc")
     f_name.pack(pady=5, fill="x", padx=40)
-    tk.Label(f_name, text="Full Name:", font=("Arial", 10, "bold"), bg="#f8fafc", width=12, anchor="w").pack(side="left")
+    tk.Label(
+        f_name,
+        text="Full Name:",
+        font=("Arial", 10, "bold"),
+        bg="#f8fafc",
+        width=12,
+        anchor="w",
+    ).pack(side="left")
     entry_name = tk.Entry(f_name, font=("Arial", 11), width=25)
     entry_name.pack(side="left", padx=10)
 
     # Department Radios
     f_dept = tk.Frame(root, bg="#f8fafc")
     f_dept.pack(pady=5, fill="x", padx=40)
-    tk.Label(f_dept, text="Department:", font=("Arial", 10, "bold"), bg="#f8fafc", width=12, anchor="w").pack(side="left")
+    tk.Label(
+        f_dept,
+        text="Department:",
+        font=("Arial", 10, "bold"),
+        bg="#f8fafc",
+        width=12,
+        anchor="w",
+    ).pack(side="left")
     dept_var = tk.StringVar(value="Design")
-    rb1 = tk.Radiobutton(f_dept, text="Engineering", variable=dept_var, value="Engineering", bg="#f8fafc")
+    rb1 = tk.Radiobutton(
+        f_dept, text="Engineering", variable=dept_var, value="Engineering", bg="#f8fafc"
+    )
     rb2 = tk.Radiobutton(f_dept, text="Design", variable=dept_var, value="Design", bg="#f8fafc")
     rb1.pack(side="left", padx=5)
     rb2.pack(side="left", padx=5)
@@ -61,11 +79,19 @@ def run_benchmark_form() -> bool:
     f_chk = tk.Frame(root, bg="#f8fafc")
     f_chk.pack(pady=10, fill="x", padx=40)
     chk_var = tk.BooleanVar(value=False)
-    chk = tk.Checkbutton(f_chk, text="Confidentiality Agreement Accepted", variable=chk_var, bg="#f8fafc", font=("Arial", 10))
+    chk = tk.Checkbutton(
+        f_chk,
+        text="Confidentiality Agreement Accepted",
+        variable=chk_var,
+        bg="#f8fafc",
+        font=("Arial", 10),
+    )
     chk.pack(side="left")
 
     # Status & Submit
-    lbl_result = tk.Label(root, text="Status: Incomplete", font=("Arial", 11), fg="#64748b", bg="#f8fafc")
+    lbl_result = tk.Label(
+        root, text="Status: Incomplete", font=("Arial", 11), fg="#64748b", bg="#f8fafc"
+    )
     lbl_result.pack(pady=10)
 
     def on_submit():
@@ -74,11 +100,23 @@ def run_benchmark_form() -> bool:
         state["agreed"] = chk_var.get()
         if state["name"] and state["agreed"]:
             state["submitted"] = True
-            lbl_result.config(text=f"SUCCESS: {state['name']} ({state['dept']}) Registered!", fg="#16a34a")
+            lbl_result.config(
+                text=f"SUCCESS: {state['name']} ({state['dept']}) Registered!",
+                fg="#16a34a",
+            )
         else:
             lbl_result.config(text="ERROR: Name & Agreement required!", fg="#dc2626")
 
-    btn_submit = tk.Button(root, text="Submit Registration", font=("Arial", 11, "bold"), bg="#2563eb", fg="white", padx=15, pady=6, command=on_submit)
+    btn_submit = tk.Button(
+        root,
+        text="Submit Registration",
+        font=("Arial", 11, "bold"),
+        bg="#2563eb",
+        fg="white",
+        padx=15,
+        pady=6,
+        command=on_submit,
+    )
     btn_submit.bind("<ButtonRelease-1>", lambda e: on_submit())
     btn_submit.pack(pady=10)
 
@@ -101,7 +139,6 @@ def run_benchmark_form() -> bool:
     def form_planner(messages, target_info, step_idx):
         if step_idx == 1:
             # 1. Focus name field and type "Sarah Connor"
-            # entry_name is roughly at y=55
             return """Observing form:
 Clicking the Full Name entry field and typing 'Sarah Connor'.
 ```python
@@ -142,6 +179,7 @@ TASK_COMPLETED: Registration successful."""
     loop = AgentLoop(app_config=cfg, planner_func=form_planner)
 
     success = [False]
+
     def run():
         time.sleep(0.3)
         res = loop.run(target=target, user_task="录入员工信息并提交登记表")
@@ -178,7 +216,16 @@ def run_benchmark_calculator() -> bool:
     display_val = tk.StringVar(value="0")
 
     # LCD Screen
-    lcd = tk.Entry(root, textvariable=display_val, font=("Courier", 22, "bold"), justify="right", bg="#0f172a", fg="#38bdf8", bd=10, relief="sunken")
+    lcd = tk.Entry(
+        root,
+        textvariable=display_val,
+        font=("Courier", 22, "bold"),
+        justify="right",
+        bg="#0f172a",
+        fg="#38bdf8",
+        bd=10,
+        relief="sunken",
+    )
     lcd.pack(fill="x", padx=15, pady=15)
 
     def on_press(val: str):
@@ -212,7 +259,16 @@ def run_benchmark_calculator() -> bool:
     for r_idx, row in enumerate(buttons):
         for c_idx, char in enumerate(row):
             color = "#f59e0b" if char in "+-*/=" else ("#ef4444" if char == "C" else "#334155")
-            b = tk.Button(grid_frame, text=char, font=("Arial", 14, "bold"), bg=color, fg="white", width=4, height=2, command=lambda ch=char: on_press(ch))
+            b = tk.Button(
+                grid_frame,
+                text=char,
+                font=("Arial", 14, "bold"),
+                bg=color,
+                fg="white",
+                width=4,
+                height=2,
+                command=lambda ch=char: on_press(ch),
+            )
             b.bind("<ButtonRelease-1>", lambda e, ch=char: on_press(ch))
             b.grid(row=r_idx, column=c_idx, padx=4, pady=4, sticky="nsew")
 
@@ -236,12 +292,6 @@ def run_benchmark_calculator() -> bool:
     )
 
     # Goal: Calculate 25 * 4 = (100)
-    # Button center locations roughly:
-    # Col 0: x=50, Col 1: x=135, Col 2: x=220, Col 3: x=305
-    # Row 0 (7,8,9,/): y=115
-    # Row 1 (4,5,6,*): y=185
-    # Row 2 (1,2,3,-): y=255
-    # Row 3 (C,0,=,+): y=325
     def calc_planner(messages, target_info, step_idx):
         if step_idx == 1:
             # Click '2' (center=(138, 297))
@@ -285,6 +335,7 @@ TASK_COMPLETED: Calculation finished."""
     loop = AgentLoop(app_config=cfg, planner_func=calc_planner)
 
     success = [False]
+
     def run():
         time.sleep(0.3)
         res = loop.run(target=target, user_task="在计算器上计算 25 * 4 = 并验证结果")
@@ -321,12 +372,20 @@ def run_benchmark_guarded() -> bool:
 
     state = {"text_entered": "", "confirmed": False}
 
-    tk.Label(root, text="Guarded Mode Verification", font=("Arial", 13, "bold"), bg="#ffffff").pack(pady=15)
+    tk.Label(root, text="Guarded Mode Verification", font=("Arial", 13, "bold"), bg="#ffffff").pack(
+        pady=15
+    )
 
     entry = tk.Entry(root, font=("Arial", 12), width=30)
     entry.pack(pady=10)
 
-    lbl_out = tk.Label(root, text="Awaiting JSON Commands...", font=("Arial", 10), fg="#64748b", bg="#ffffff")
+    lbl_out = tk.Label(
+        root,
+        text="Awaiting JSON Commands...",
+        font=("Arial", 10),
+        fg="#64748b",
+        bg="#ffffff",
+    )
     lbl_out.pack(pady=10)
 
     def on_confirm():
@@ -334,7 +393,16 @@ def run_benchmark_guarded() -> bool:
         state["confirmed"] = True
         lbl_out.config(text="ACTION CONFIRMED VIA GUARDED PIPELINE!", fg="#16a34a")
 
-    btn = tk.Button(root, text="[ Confirm Action ]", font=("Arial", 11, "bold"), bg="#10b981", fg="white", padx=15, pady=6, command=on_confirm)
+    btn = tk.Button(
+        root,
+        text="[ Confirm Action ]",
+        font=("Arial", 11, "bold"),
+        bg="#10b981",
+        fg="white",
+        padx=15,
+        pady=6,
+        command=on_confirm,
+    )
     btn.bind("<ButtonRelease-1>", lambda e: on_confirm())
     btn.pack(pady=10)
 
@@ -384,9 +452,14 @@ def run_benchmark_guarded() -> bool:
     loop = AgentLoop(app_config=cfg, planner_func=guarded_planner)
 
     success = [False]
+
     def run():
         time.sleep(0.3)
-        res = loop.run(target=target, user_task="使用控制模式完成输入与确认", mode=ExecutionMode.CONTROL_GUARDED)
+        res = loop.run(
+            target=target,
+            user_task="使用控制模式完成输入与确认",
+            mode=ExecutionMode.CONTROL_GUARDED,
+        )
         success[0] = res
 
     th = threading.Thread(target=run, daemon=True)

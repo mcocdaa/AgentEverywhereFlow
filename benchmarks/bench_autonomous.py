@@ -4,11 +4,11 @@ Runs a live GUI app and executes the autonomous Agent perception-action loop
 to prove completion of a multi-step user goal.
 """
 
-import sys
 import threading
 import time
 import tkinter as tk
 from pathlib import Path
+
 from Xlib import display
 
 from agenteverywhereflow.agent.loop import AgentLoop
