@@ -29,6 +29,7 @@ dependencies = [
     "openai>=1.30.0",
     "pyyaml>=6.0.1",
     "python-dotenv>=1.0.1",
+    "anthropic>=1.8.0",
 ]
 
 [project.optional-dependencies]
@@ -47,6 +48,10 @@ dev = [
 
 [project.scripts]
 aef = "agenteverywhereflow.cli:app"
+
+[[tool.uv.index]]
+url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+default = true
 
 [build-system]
 requires = ["hatchling"]
