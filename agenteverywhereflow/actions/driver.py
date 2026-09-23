@@ -54,6 +54,17 @@ class InputDriver:
             pass
         return win, rx, ry
 
+    def _get_x11_active_input_window(self, x_disp: Any, parent_win: Any) -> Any:
+        """Find the innermost child window that currently has or can receive focus."""
+        try:
+            tree = parent_win.query_tree()
+            if tree.children:
+                # Often the last child is the active/focused control
+                return tree.children[-1]
+        except Exception:
+            pass
+        return parent_win
+
     def move_to(self, x: int, y: int, duration: float = 0.1) -> None:
         """Move cursor smoothly to target screen coordinates."""
         backend = self._get_backend()
@@ -71,7 +82,7 @@ class InputDriver:
         window_rel_y: int = 0,
     ) -> None:
         """Perform mouse click at (x, y) or via direct window handle event."""
-        # 1. If on Linux and window handle is provided, perform deep child hit-test and event injection
+        # 1. Linux direct window handle event injection
         x_disp = self._get_x11_display()
         if x_disp and window_handle > 0:
             try:
@@ -178,15 +189,11 @@ class InputDriver:
                 from Xlib.protocol import event
 
                 parent_win = x_disp.create_resource_object("window", window_handle)
-                # If window has active child/focused window, locate it
-                target_win = parent_win
-                tree = parent_win.query_tree()
-                if tree.children:
-                    # Target the last focused or input child
-                    target_win = tree.children[-1]
+                target_win = self._get_x11_active_input_window(x_disp, parent_win)
 
                 for char in text:
-                    keysym = XK.string_to_keysym(char)
+                    sym_name = "space" if char == " " else char
+                    keysym = XK.string_to_keysym(sym_name)
                     if keysym:
                         keycode = x_disp.keysym_to_keycode(keysym)
                         state = X.ShiftMask if char.isupper() else 0
@@ -238,13 +245,94 @@ class InputDriver:
                 backend.write(text)
 
     def press_key(self, key: str, window_handle: int = 0) -> None:
-        """Press and release a single key (e.g. 'enter', 'esc', 'tab', 'backspace')."""
+        """Press and release a single key (e.g. 'enter', 'backspace', 'tab', 'escape')."""
+        x_disp = self._get_x11_display()
+        if x_disp and window_handle > 0:
+            try:
+                from Xlib import X, XK
+                from Xlib.protocol import event
+
+                key_map = {
+                    "enter": "Return",
+                    "return": "Return",
+                    "backspace": "BackSpace",
+                    "tab": "Tab",
+                    "escape": "Escape",
+                    "esc": "Escape",
+                    "space": "space",
+                    "delete": "Delete",
+                }
+                keysym_name = key_map.get(key.lower(), key)
+                keysym = XK.string_to_keysym(keysym_name)
+                if keysym:
+                    keycode = x_disp.keysym_to_keycode(keysym)
+                    parent_win = x_disp.create_resource_object("window", window_handle)
+                    target_win = self._get_x11_active_input_window(x_disp, parent_win)
+
+                    evt_down = event.KeyPress(
+                        time=X.CurrentTime, root=x_disp.screen().root, window=target_win,
+                        same_screen=1, child=X.NONE, root_x=0, root_y=0, event_x=0, event_y=0,
+                        state=0, detail=keycode,
+                    )
+                    target_win.send_event(evt_down, event_mask=X.KeyPressMask)
+
+                    evt_up = event.KeyRelease(
+                        time=X.CurrentTime, root=x_disp.screen().root, window=target_win,
+                        same_screen=1, child=X.NONE, root_x=0, root_y=0, event_x=0, event_y=0,
+                        state=0, detail=keycode,
+                    )
+                    target_win.send_event(evt_up, event_mask=X.KeyReleaseMask)
+                    x_disp.flush()
+                    return
+            except Exception:
+                pass
+
         backend = self._get_backend()
         if backend:
             backend.press(key.lower())
 
-    def hotkey(self, *keys: str) -> None:
-        """Press key combinations (e.g. ('ctrl', 'c'), ('alt', 'tab'))."""
+    def hotkey(self, *keys: str, window_handle: int = 0) -> None:
+        """Press key combinations (e.g. ('ctrl', 'a'))."""
+        x_disp = self._get_x11_display()
+        if x_disp and window_handle > 0:
+            try:
+                from Xlib import X, XK
+                from Xlib.protocol import event
+
+                # Handle ctrl+key combos
+                mod_keys = [k.lower() for k in keys[:-1]]
+                main_key = keys[-1]
+
+                parent_win = x_disp.create_resource_object("window", window_handle)
+                target_win = self._get_x11_active_input_window(x_disp, parent_win)
+
+                state = 0
+                if "ctrl" in mod_keys or "control" in mod_keys:
+                    state |= X.ControlMask
+                if "shift" in mod_keys:
+                    state |= X.ShiftMask
+
+                keysym = XK.string_to_keysym(main_key)
+                if keysym:
+                    keycode = x_disp.keysym_to_keycode(keysym)
+                    evt_down = event.KeyPress(
+                        time=X.CurrentTime, root=x_disp.screen().root, window=target_win,
+                        same_screen=1, child=X.NONE, root_x=0, root_y=0, event_x=0, event_y=0,
+                        state=state, detail=keycode,
+                    )
+                    target_win.send_event(evt_down, event_mask=X.KeyPressMask)
+
+                    evt_up = event.KeyRelease(
+                        time=X.CurrentTime, root=x_disp.screen().root, window=target_win,
+                        same_screen=1, child=X.NONE, root_x=0, root_y=0, event_x=0, event_y=0,
+                        state=state, detail=keycode,
+                    )
+                    target_win.send_event(evt_up, event_mask=X.KeyReleaseMask)
+                    x_disp.flush()
+                    return
+            except Exception:
+                pass
+
         backend = self._get_backend()
         if backend:
             backend.hotkey(*(k.lower() for k in keys))

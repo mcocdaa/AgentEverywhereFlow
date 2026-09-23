@@ -82,12 +82,12 @@ class GuardedActionEngine(BaseExecutionEngine):
 
             elif action == "press":
                 key = str(payload.get("key", ""))
-                driver.press_key(key)
+                driver.press_key(key, window_handle=target.native_handle)
                 return ExecutionResult(success=True, output=f"Pressed key: {key}")
 
             elif action == "hotkey":
                 keys = payload.get("keys", [])
-                driver.hotkey(*keys)
+                driver.hotkey(*keys, window_handle=target.native_handle)
                 return ExecutionResult(success=True, output=f"Sent hotkey: {keys}")
 
             elif action == "scroll":

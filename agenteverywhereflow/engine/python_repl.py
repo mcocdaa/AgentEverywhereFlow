@@ -62,10 +62,10 @@ class PythonReplEngine(BaseExecutionEngine):
             driver.type_text(text, window_handle=target.native_handle)
 
         def press(key: str) -> None:
-            driver.press_key(key)
+            driver.press_key(key, window_handle=target.native_handle)
 
         def hotkey(*keys: str) -> None:
-            driver.hotkey(*keys)
+            driver.hotkey(*keys, window_handle=target.native_handle)
 
         def scroll(amount: int, x: float | None = None, y: float | None = None) -> None:
             if x is not None and y is not None:

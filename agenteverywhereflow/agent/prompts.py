@@ -53,11 +53,11 @@ Available JSON Action Schemas:
 Output format:
 Explain your reasoning briefly, then provide a single JSON block formatted as:
 ```json
-{
+{{
   "action": "click",
   "x": 450,
   "y": 120
-}
+}}
 ```
 """
 
