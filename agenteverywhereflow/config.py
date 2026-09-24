@@ -33,9 +33,9 @@ class AppConfig(BaseSettings):
     """Global configuration settings for AEFlow."""
 
     # LLM Provider settings
-    model_name: str = Field(default="gpt-4o", description="Default Vision-LLM model")
+    model_name: str = Field(default="deepseek-flash", description="Default Vision-LLM model")
     api_key: str = Field(default="", description="API Key for the model provider")
-    base_url: str = Field(default="https://api.openai.com/v1", description="Provider base URL")
+    base_url: str = Field(default="https://api.deepseek.com", description="Provider base URL")
 
     # Execution settings
     default_mode: ExecutionMode = Field(
@@ -80,13 +80,16 @@ class AppConfig(BaseSettings):
                     data["api_key"] = env_key
 
             # 2. Fallback for base_url
-            if not data.get("base_url") or data.get("base_url") == "https://api.openai.com/v1":
+            if not data.get("base_url") or data.get("base_url") in (
+                "https://api.deepseek.com",
+                "https://api.openai.com/v1",
+            ):
                 env_base = os.environ.get("AEF_BASE_URL") or os.environ.get("OPENAI_BASE_URL")
                 if env_base:
                     data["base_url"] = env_base
 
             # 3. Fallback for model_name
-            if not data.get("model_name") or data.get("model_name") == "gpt-4o":
+            if not data.get("model_name") or data.get("model_name") in ("deepseek-flash", "gpt-4o"):
                 env_model = os.environ.get("AEF_MODEL_NAME") or os.environ.get("OPENAI_MODEL_NAME")
                 if env_model:
                     data["model_name"] = env_model

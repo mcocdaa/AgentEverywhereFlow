@@ -20,3 +20,14 @@ def test_config_aef_takes_precedence_over_openai(monkeypatch):
 
     cfg = AppConfig()
     assert cfg.api_key == "sk-aef-priority"
+
+
+def test_config_defaults(monkeypatch):
+    monkeypatch.delenv("AEF_MODEL_NAME", raising=False)
+    monkeypatch.delenv("AEF_BASE_URL", raising=False)
+    monkeypatch.delenv("OPENAI_MODEL_NAME", raising=False)
+    monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
+
+    cfg = AppConfig()
+    assert cfg.model_name == "deepseek-flash"
+    assert cfg.base_url == "https://api.deepseek.com"

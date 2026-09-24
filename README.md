@@ -138,32 +138,35 @@ uv pip install -e ".[dev,linux]"
 
 ### Configuration
 
-AEFlow supports multiple flexible configuration methods with automatic cascading fallbacks:
+AEFlow supports multiple flexible configuration methods with automatic cascading fallbacks (default model: `deepseek-flash` | default base URL: `https://api.deepseek.com`):
 
 #### Method 1: Instant CLI Configuration (Recommended)
 Persist credentials globally to `~/.aef/.env` without editing files:
 ```bash
-aef config --set-key "sk-your-openai-api-key"
-aef config --set-model "gpt-4o"
+# 1. Set your API Key (default is already configured for DeepSeek):
+aef config --set-key "sk-your-api-key"
 
-# Optionally set a custom base URL (e.g. DeepSeek, OpenRouter, Qwen):
+# 2. (Optional) Switch to OpenAI, Claude, or custom providers if desired:
+aef config --set-model "gpt-4o"
 aef config --set-base "https://api.openai.com/v1"
 ```
 
 #### Method 2: Standard Environment Variables
-AEFlow automatically falls back to standard OpenAI environment variables:
+AEFlow automatically falls back to standard environment variables:
 ```bash
 export OPENAI_API_KEY="sk-your-api-key"
-export OPENAI_BASE_URL="https://api.openai.com/v1"
-export OPENAI_MODEL_NAME="gpt-4o"
+
+# Optional overrides (defaults to https://api.deepseek.com and deepseek-flash):
+export OPENAI_BASE_URL="https://api.deepseek.com"
+export OPENAI_MODEL_NAME="deepseek-flash"
 ```
 
 #### Method 3: Local `.env` File
 You can also place a `.env` in the current working directory:
 ```ini
-AEF_MODEL_NAME=gpt-4o
+AEF_MODEL_NAME=deepseek-flash
+AEF_BASE_URL=https://api.deepseek.com
 AEF_API_KEY=your_api_key_here
-AEF_BASE_URL=https://api.openai.com/v1
 AEF_DEFAULT_MODE=minimal
 ```
 

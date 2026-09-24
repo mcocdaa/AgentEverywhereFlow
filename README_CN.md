@@ -137,32 +137,35 @@ uv pip install -e ".[dev,linux]"
 
 ### 环境配置
 
-AEFlow 支持多种便捷配置方式并具备多层级自动回退机制：
+AEFlow 支持多种便捷配置方式并具备多层级自动回退机制（默认模型：`deepseek-flash` | 默认 Base URL：`https://api.deepseek.com`）：
 
 #### 方式 1：CLI 一键配置（推荐）
 免手动编辑文件，自动持久化至全局 `~/.aef/.env`：
 ```bash
-aef config --set-key "sk-your-openai-api-key"
-aef config --set-model "gpt-4o"
+# 1. 设置 API Key（系统开箱已预设为 DeepSeek）：
+aef config --set-key "sk-your-api-key"
 
-# 可选：配置自定义 Base URL（如 DeepSeek, OpenRouter, Qwen 或自建中转）:
+# 2. （可选）随时切换为 OpenAI、Claude 或自定义模型：
+aef config --set-model "gpt-4o"
 aef config --set-base "https://api.openai.com/v1"
 ```
 
 #### 方式 2：标准环境变量识别
-AEFlow 会自动读取系统标准 OpenAI 环境变量：
+AEFlow 会自动读取系统标准环境变量：
 ```bash
 export OPENAI_API_KEY="sk-your-api-key"
-export OPENAI_BASE_URL="https://api.openai.com/v1"
-export OPENAI_MODEL_NAME="gpt-4o"
+
+# 可选覆盖项（开箱默认即为 https://api.deepseek.com 与 deepseek-flash）：
+export OPENAI_BASE_URL="https://api.deepseek.com"
+export OPENAI_MODEL_NAME="deepseek-flash"
 ```
 
 #### 方式 3：本地项目级 `.env`
 也可以在当前工作目录下放置 `.env` 文件：
 ```ini
-AEF_MODEL_NAME=gpt-4o
+AEF_MODEL_NAME=deepseek-flash
+AEF_BASE_URL=https://api.deepseek.com
 AEF_API_KEY=your_api_key_here
-AEF_BASE_URL=https://api.openai.com/v1
 AEF_DEFAULT_MODE=minimal
 ```
 
