@@ -21,19 +21,27 @@
 
 ### 🎬 真实场景自动化演示 (Real-World Demos)
 
-**场景 1：浏览器多模态空间感知与九宫格人机验证破解**
-<br/>
+#### 🐱 场景 1：浏览器多模态空间感知与九宫格人机验证破解
 <img src="docs/assets/demo_captcha.gif" alt="AEFlow 九宫格人机验证演示" width="820">
-<br/>
-<em>零样本视觉空间定位：Agent 投屏绑定浏览器窗口，毫秒级理解九宫格任务要求，精准辨识 3 张猫咪图片依次点击打勾，并点击右下角按钮通过人机验证。</em>
 
-<br/><br/>
+*零样本视觉空间定位：Agent 投屏绑定浏览器窗口，毫秒级理解九宫格任务要求，精准辨识 3 张猫咪图片依次点击打勾，并点击右下角按钮通过人机验证。*
 
-**场景 2：桌面办公自动化与 Excel 表格公式自动求和**
+```bash
+# 在 Chrome 或 Edge 浏览器中即刻复现（使用内置 examples/captcha_demo.html）:
+aef run --target "Chrome" --task "在当前九宫格人机验证中，找出所有包含猫咪的方格依次点击选中，然后点击右下角的验证按钮"
+```
+
 <br/>
+
+#### 📊 场景 2：桌面办公自动化与 Excel 表格公式自动求和
 <img src="docs/assets/demo_excel.gif" alt="AEFlow Excel 自动求和演示" width="820">
-<br/>
-<em>桌面生产力闭环：Agent 投屏绑定 Excel 窗口，自动定位销售额列下方的空白总计单元格，注入 <code>=SUM(D2:D6)</code> 公式并敲下回车完成统计。</em>
+
+*桌面生产力闭环：Agent 投屏绑定 Excel 窗口，自动定位销售额列下方的空白总计单元格，注入 <code>=SUM(D2:D6)</code> 公式并敲下回车完成统计。*
+
+```bash
+# 在 Excel 或 WPS 中即刻复现（使用内置 examples/sales_demo.xlsx）:
+aef run --target "Excel" --task "在销售额列下方的总计空白单元格点击，输入求和公式计算总金额并按回车"
+```
 
 </div>
 
@@ -49,7 +57,7 @@
 - ⚡ **即刻召唤 (`aef summon`)**：支持终端交互式菜单与全局热键秒级唤起。
 - 📐 **严格空间分辨率契约**：明确视口像素空间 `(0, 0) -> (width, height)`，支持坐标网格辅助标尺与 Set-of-Mark (SoM) 候选标定。
 - 🛡️ **双模式执行引擎架构**：
-  - **极简模式 (CodeAct REPL)**：支持模型直接生成并链式执行 Python 工具代码（`click`, `type_text`, `press`, `wait`），效率极高。
+  - **极简模式 (CodeAct REPL)**：支持模型直接生成并链式执行 Python 工具代码（`click`, `type_text`, `press`, `wait`），支持多代码块序列合并执行。
   - **受控模式 (Guarded Action Engine)**：严格 JSON Schema 原子级操作分发，提供敏感行为拦截与人机确认门禁。
 - 🎯 **递归子组件命中测试**：针对 X11 与 Win32 树状层级，自动递归查找最底层子控件 XID/HWND，保证按钮与输入框 100% 响应事件。
 
@@ -129,13 +137,28 @@ uv pip install -e ".[dev,linux]"
 
 ### 环境配置
 
-复制环境变量模板并填入模型供应商配置：
+AEFlow 支持多种便捷配置方式并具备多层级自动回退机制：
 
+#### 方式 1：CLI 一键配置（推荐）
+免手动编辑文件，自动持久化至全局 `~/.aef/.env`：
 ```bash
-cp .env.example .env
+aef config --set-key "sk-your-openai-api-key"
+aef config --set-model "gpt-4o"
+
+# 可选：配置自定义 Base URL（如 DeepSeek, OpenRouter, Qwen 或自建中转）:
+aef config --set-base "https://api.openai.com/v1"
 ```
 
-主要环境变量说明：
+#### 方式 2：标准环境变量识别
+AEFlow 会自动读取系统标准 OpenAI 环境变量：
+```bash
+export OPENAI_API_KEY="sk-your-api-key"
+export OPENAI_BASE_URL="https://api.openai.com/v1"
+export OPENAI_MODEL_NAME="gpt-4o"
+```
+
+#### 方式 3：本地项目级 `.env`
+也可以在当前工作目录下放置 `.env` 文件：
 ```ini
 AEF_MODEL_NAME=gpt-4o
 AEF_API_KEY=your_api_key_here
@@ -151,13 +174,25 @@ AEF_DEFAULT_MODE=minimal
 # 1. 启动交互式投屏目标选择器并召唤智能体
 aef summon
 
-# 2. 列出当前操作系统所有可用的物理显示器与应用窗口
+# 2. 列出当前可用物理显示器与应用窗口（带 Target ID 与 HWND 句柄）
 aef list-targets
 
-# 3. 指定目标窗口标题（模糊匹配）并下发具体任务
+# 3. 按窗口标题关键字匹配召唤
 aef run --target "Chrome" --task "帮我在页面里搜索最近的 GitHub Trending 项目"
 
-# 4. 查看系统信息与已安装版本
+# 4. 按 Target ID 或 16进制 HWND 精确召唤（杜绝窗口同名歧义）
+aef run --target hwnd:0x409dc --task "帮我过一下人机验证"
+
+# 5. 直接投屏整个物理显示器
+aef run --target display:1 --task "整理桌面图标并排列窗口"
+
+# 6. 开启 Debug 诊断模式运行（打印实时 Token 消耗、状态诊断与逐步截图）
+aef run --target "Excel" --task "计算总金额" --debug
+
+# 7. 查看当前生效的完整配置
+aef config
+
+# 8. 查看系统信息与已安装版本
 aef version
 ```
 
@@ -184,7 +219,7 @@ loop = AgentLoop(app_config=AppConfig(default_mode=ExecutionMode.MINIMAL_PYTHON)
 loop.run(target=target, user_task="录入表单数据并点击提交按钮")
 ```
 
-更多进阶用法与自定义规划器回调请参阅 [examples/](examples/) 目录。
+更多进阶用法、自定义规划器回调与演示测试资产请参阅 [examples/](examples/) 目录。
 
 ---
 
@@ -221,7 +256,7 @@ AgentEverywhereFlow/
 │   └── config.py               # Pydantic v2 配置模型
 ├── benchmarks/                 # 自动化端到端高保真基准测试集
 ├── docs/                       # 核心架构、视觉标定与执行引擎详细文档
-├── examples/                   # 开发者 Python 调用示例
+├── examples/                   # 开发者 Python 调用示例与互动演示资产
 ├── tests/                      # 单元测试 (pytest)
 ├── pyproject.toml              # 现代包构建规范
 ├── CONTRIBUTING.md             # 开发者贡献指南
@@ -234,12 +269,15 @@ AgentEverywhereFlow/
 
 ## 🗺️ 演进路线图 (Roadmap)
 
-- [x] **v0.1.0 (MVP 阶段)**:
-  - [x] 跨平台视口抽象：显示器全屏与独立窗口枚举。
+- [x] **v0.1.0 ~ v0.1.3 (核心基座与体验加固)**:
+  - [x] 跨平台视口抽象：显示器全屏与独立窗口枚举，支持 Target ID 精准定位。
   - [x] Windows 原生 DWM / `PrintWindow` 捕获与 Per-Monitor DPI-v2 缩放支持。
   - [x] Linux X11 独立 Drawable 原生捕获与递归子组件事件分发 (`_find_x11_child_at`)。
+  - [x] 硬件级 Win32 鼠标点击注入、前台输入锁穿透与剪贴板中文防输入法拦截输入。
   - [x] 双模式执行引擎基座（极简 Python CodeAct REPL + 细粒度受控模式）。
-  - [x] 端到端高保真基准测试套件（表单、计算器、受控模式）。
+  - [x] 多代码块 CodeAct 序列自动合并执行与终端 ANSI 输出隔离。
+  - [x] 全局 `~/.aef/.env` 级联配置系统与 `aef config` 交互命令。
+  - [x] 端到端高保真基准测试套件（表单、计算器、受控模式）与真实动效展示。
 - [ ] **v0.2.0 (交互式 HUD)**:
   - [ ] 基于轻量级半透明浮窗的智能体状态与思考流 HUD。
   - [ ] 全局快捷键呼出 (`Win+Shift+A` / `Ctrl+Shift+A`) 与一键急停刹车 (`ESC`)。

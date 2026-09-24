@@ -20,21 +20,29 @@
 
 <div align="center">
 
-### 🎬 Real-World Autonomous Demos (真实运行演示)
+### 🎬 Real-World Autonomous Demos
 
-**Scenario 1: 9-Grid Visual CAPTCHA Solving & Autonomous Grounding**
-<br/>
+#### 🐱 Scenario 1: 9-Grid Visual CAPTCHA Solving & Spatial Grounding
 <img src="docs/assets/demo_captcha.gif" alt="AEFlow 9-Grid Captcha Demo" width="820">
-<br/>
-<em>Zero-shot multimodal spatial grounding: Agent targets browser window, identifies all 3 cat tiles in a 9-grid challenge, clicks each with visual checks, and passes verification.</em>
 
-<br/><br/>
+*Zero-shot multimodal spatial grounding: Agent targets browser window, identifies all 3 cat tiles in a 9-grid challenge, clicks each with visual checks, and passes verification.*
 
-**Scenario 2: Office Spreadsheet Automation & Formula Calculation**
+```bash
+# Reproduce in Chrome or Edge (try it yourself with examples/captcha_demo.html):
+aef run --target "Chrome" --task "在当前九宫格人机验证中，找出所有包含猫咪的方格依次点击选中，然后点击右下角的验证按钮"
+```
+
 <br/>
+
+#### 📊 Scenario 2: Office Spreadsheet Automation & Formula Calculation
 <img src="docs/assets/demo_excel.gif" alt="AEFlow Excel Summation Demo" width="820">
-<br/>
-<em>Desktop productivity: Agent targets Microsoft Excel window, locates target Total cell, injects <code>=SUM(D2:D6)</code> formula, and calculates total sales.</em>
+
+*Desktop productivity: Agent targets Microsoft Excel window, locates target Total cell, injects <code>=SUM(D2:D6)</code> formula, and calculates total sales.*
+
+```bash
+# Reproduce in Excel or WPS (try it yourself with examples/sales_demo.xlsx):
+aef run --target "Excel" --task "在销售额列下方的总计空白单元格点击，输入求和公式计算总金额并按回车"
+```
 
 </div>
 
@@ -50,7 +58,7 @@ Existing computer-use and GUI automation agents suffer from three major roadbloc
 - ⚡ **Instant Summon (`aef summon`)**: Cast and summon an agent in seconds via an interactive terminal UI or global shortcut.
 - 📐 **Explicit Resolution Contract**: Native pixel-space calibration `(0, 0) -> (width, height)` paired with optional coordinate grids and Set-of-Mark (SoM) indicators.
 - 🛡️ **Dual-Mode Execution Architecture**:
-  - **Minimal Mode (CodeAct REPL)**: High-speed, pythonic chaining of actions (`click`, `type_text`, `press`, `wait`, `hotkey`).
+  - **Minimal Mode (CodeAct REPL)**: High-speed, pythonic chaining of actions (`click`, `type_text`, `press`, `wait`, `hotkey`) with multi-block sequence merging.
   - **Guarded Mode (JSON Schema)**: Strict atomic action schemas with safety policy filters and human-in-the-loop confirmation gates.
 - 🎯 **Recursive Sub-Widget Hit Testing**: Deep X11 and Win32 tree inspection ensuring clicks reliably trigger nested buttons, inputs, and controls without event dropping.
 
@@ -130,13 +138,28 @@ uv pip install -e ".[dev,linux]"
 
 ### Configuration
 
-Copy the template environment file and add your model provider credentials:
+AEFlow supports multiple flexible configuration methods with automatic cascading fallbacks:
 
+#### Method 1: Instant CLI Configuration (Recommended)
+Persist credentials globally to `~/.aef/.env` without editing files:
 ```bash
-cp .env.example .env
+aef config --set-key "sk-your-openai-api-key"
+aef config --set-model "gpt-4o"
+
+# Optionally set a custom base URL (e.g. DeepSeek, OpenRouter, Qwen):
+aef config --set-base "https://api.openai.com/v1"
 ```
 
-Key environment variables in `.env`:
+#### Method 2: Standard Environment Variables
+AEFlow automatically falls back to standard OpenAI environment variables:
+```bash
+export OPENAI_API_KEY="sk-your-api-key"
+export OPENAI_BASE_URL="https://api.openai.com/v1"
+export OPENAI_MODEL_NAME="gpt-4o"
+```
+
+#### Method 3: Local `.env` File
+You can also place a `.env` in the current working directory:
 ```ini
 AEF_MODEL_NAME=gpt-4o
 AEF_API_KEY=your_api_key_here
@@ -152,13 +175,25 @@ AEF_DEFAULT_MODE=minimal
 # 1. Interactive screen-cast target picker and agent summoner
 aef summon
 
-# 2. List all available physical displays and active application windows
+# 2. List all available physical displays and active application windows with Target IDs
 aef list-targets
 
-# 3. Directly summon agent onto a matching display or window title
+# 3. Summon agent by Window Title substring
 aef run --target "Chrome" --task "Search for GitHub Trending repositories"
 
-# 4. Check system info & installed version
+# 4. Summon agent by Target ID or Native HWND (Precision targeting)
+aef run --target hwnd:0x409dc --task "帮我过一下人机验证"
+
+# 5. Summon agent onto an entire physical display
+aef run --target display:1 --task "Organize desktop icons"
+
+# 6. Run with step diagnostics and debug logging
+aef run --target "Excel" --task "Calculate total" --debug
+
+# 7. View current configuration
+aef config
+
+# 8. Check system info & installed version
 aef version
 ```
 
@@ -185,7 +220,7 @@ loop = AgentLoop(app_config=AppConfig(default_mode=ExecutionMode.MINIMAL_PYTHON)
 loop.run(target=target, user_task="Fill the form and click submit")
 ```
 
-See [examples/](examples/) for more scripts, including custom model planner callbacks.
+See [examples/](examples/) for more scripts, including custom model planner callbacks and interactive captcha demos.
 
 ---
 
@@ -222,7 +257,7 @@ AgentEverywhereFlow/
 │   └── config.py               # Pydantic v2 application configuration
 ├── benchmarks/                 # Multi-scenario autonomous benchmark suite
 ├── docs/                       # Architecture, vision pipeline, and engine docs
-├── examples/                   # Developer invocation examples
+├── examples/                   # Developer invocation examples & interactive demo assets
 ├── tests/                      # Unit tests (pytest)
 ├── pyproject.toml              # Build & dependency declarations
 ├── CONTRIBUTING.md             # Developer contribution guide
@@ -235,13 +270,16 @@ AgentEverywhereFlow/
 
 ## 🗺️ Roadmap
 
-- [x] **v0.1.0 (MVP Foundation)**:
-  - [x] Viewport abstractions: Display & Window enumeration.
+- [x] **v0.1.0 ~ v0.1.3 (Foundation & Ergonomics)**:
+  - [x] Viewport abstractions: Display & Window enumeration with Target ID precision.
   - [x] Windows native DWM / `PrintWindow` capture with Per-Monitor DPI-v2 awareness.
   - [x] Linux X11 native drawable window capture & child hit-testing (`_find_x11_child_at`).
+  - [x] Hardware-level Win32 mouse/keyboard injection & clipboard Unicode typing.
   - [x] Dual-mode execution engines (CodeAct REPL & Guarded Action Engine).
-  - [x] End-to-end benchmark suite (Form, Calculator, Guarded).
-- [ ] **v0.2.0 (Interactive HUD)**:
+  - [x] Multi-block CodeAct sequence extraction & execution.
+  - [x] Global configuration (`~/.aef/.env`) & `aef config` CLI tool.
+  - [x] Real-world benchmark suite (Form, Calculator, Guarded) & interactive showcases.
+- [ ] **v0.2.0 (Interactive HUD & Hotkeys)**:
   - [ ] Transparent floating HUD showing real-time agent reasoning steps.
   - [ ] Global hotkey summoning (`Win+Shift+A` / `Ctrl+Shift+A`) and instant emergency stop (`ESC`).
 - [ ] **v0.3.0 (Ecosystem Expansion)**:
