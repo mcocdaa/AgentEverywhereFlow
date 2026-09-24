@@ -1,9 +1,9 @@
-"""Configuration management for AgentEverywhereFlow."""
-
+import os
 from enum import StrEnum
 from pathlib import Path
+from typing import Any
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -14,9 +14,19 @@ class ExecutionMode(StrEnum):
     CONTROL_GUARDED = "guarded"  # Granular function calls with permission gate
 
 
+def get_global_config_dir() -> Path:
+    """Resolve global ~/.aef directory."""
+    return Path.home() / ".aef"
+
+
+def get_global_env_file() -> Path:
+    """Resolve global ~/.aef/.env file."""
+    return get_global_config_dir() / ".env"
+
+
 def get_default_screenshot_dir() -> Path:
     """Default cross-platform user directory for screenshots."""
-    return Path.home() / ".aef" / "screenshots"
+    return get_global_config_dir() / "screenshots"
 
 
 class AppConfig(BaseSettings):
@@ -58,9 +68,33 @@ class AppConfig(BaseSettings):
         description="Maximum recent screenshots to retain in LLM context to prevent token explosion",
     )
 
+    @model_validator(mode="before")
+    @classmethod
+    def populate_fallbacks(cls, data: Any) -> Any:
+        """Fallback to standard OPENAI_* environment variables if AEF_* not set."""
+        if isinstance(data, dict):
+            # 1. Fallback for api_key
+            if not data.get("api_key"):
+                env_key = os.environ.get("AEF_API_KEY") or os.environ.get("OPENAI_API_KEY")
+                if env_key:
+                    data["api_key"] = env_key
+
+            # 2. Fallback for base_url
+            if not data.get("base_url") or data.get("base_url") == "https://api.openai.com/v1":
+                env_base = os.environ.get("AEF_BASE_URL") or os.environ.get("OPENAI_BASE_URL")
+                if env_base:
+                    data["base_url"] = env_base
+
+            # 3. Fallback for model_name
+            if not data.get("model_name") or data.get("model_name") == "gpt-4o":
+                env_model = os.environ.get("AEF_MODEL_NAME") or os.environ.get("OPENAI_MODEL_NAME")
+                if env_model:
+                    data["model_name"] = env_model
+        return data
+
     model_config = SettingsConfigDict(
         env_prefix="AEF_",
-        env_file=".env",
+        env_file=(str(get_global_env_file()), ".env"),
         env_file_encoding="utf-8",
         extra="ignore",
     )

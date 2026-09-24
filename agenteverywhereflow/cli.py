@@ -27,6 +27,85 @@ def version() -> None:
     )
 
 
+@app.command(name="config")
+def manage_config(
+    set_key: str | None = typer.Option(
+        None, "--set-key", "-k", help="Set and persist API key into global ~/.aef/.env"
+    ),
+    set_base: str | None = typer.Option(
+        None, "--set-base", "-b", help="Set and persist Base URL into global ~/.aef/.env"
+    ),
+    set_model: str | None = typer.Option(
+        None, "--set-model", "-m", help="Set and persist Model Name into global ~/.aef/.env"
+    ),
+) -> None:
+    """View current configuration or persist global options in ~/.aef/.env."""
+    import agenteverywhereflow.config
+    from agenteverywhereflow.config import AppConfig, get_global_config_dir, get_global_env_file
+
+    env_file = get_global_env_file()
+    modified = False
+
+    # Read existing key-values from ~/.aef/.env if it exists
+    env_dict: dict[str, str] = {}
+    if env_file.exists():
+        try:
+            with open(env_file, encoding="utf-8") as f:
+                for line in f:
+                    line_strip = line.strip()
+                    if line_strip and not line_strip.startswith("#") and "=" in line_strip:
+                        k, v = line_strip.split("=", 1)
+                        env_dict[k.strip()] = v.strip().strip("'\"")
+        except Exception:
+            pass
+
+    if set_key is not None:
+        env_dict["AEF_API_KEY"] = set_key.strip()
+        modified = True
+    if set_base is not None:
+        env_dict["AEF_BASE_URL"] = set_base.strip()
+        modified = True
+    if set_model is not None:
+        env_dict["AEF_MODEL_NAME"] = set_model.strip()
+        modified = True
+
+    if modified:
+        get_global_config_dir().mkdir(parents=True, exist_ok=True)
+        with open(env_file, "w", encoding="utf-8") as f:
+            for k, v in env_dict.items():
+                f.write(f"{k}={v}\n")
+        console.print(
+            f"[bold green]✓ Successfully updated global configuration in {env_file}![/bold green]"
+        )
+        # Reload config instance
+        agenteverywhereflow.config.config = AppConfig()
+
+    current_cfg = agenteverywhereflow.config.config
+    key_display = (
+        f"[green]{current_cfg.api_key[:6]}...{current_cfg.api_key[-4:]}[/green]"
+        if len(current_cfg.api_key) > 10
+        else (
+            "[green]Configured[/green]"
+            if current_cfg.api_key
+            else "[bold red]Not Configured (Missing)[/bold red]"
+        )
+    )
+
+    console.print(
+        Panel(
+            f"[bold cyan]Model Name:[/bold cyan] {current_cfg.model_name}\n"
+            f"[bold cyan]Base URL:[/bold cyan] {current_cfg.base_url}\n"
+            f"[bold cyan]API Key:[/bold cyan] {key_display}\n"
+            f"[bold cyan]Global Config File:[/bold cyan] {env_file}\n"
+            f"[bold cyan]Screenshots Dir:[/bold cyan] {current_cfg.screenshot_dir}\n"
+            f"[bold cyan]Execution Mode:[/bold cyan] {current_cfg.default_mode}\n"
+            f"[bold cyan]Debug Mode:[/bold cyan] {current_cfg.debug}",
+            title="⚙️ AgentEverywhereFlow Configuration",
+            border_style="cyan",
+        )
+    )
+
+
 @app.command(name="list-targets")
 def list_targets(
     displays_only: bool = typer.Option(False, "--displays-only", "-d", help="Only list displays"),

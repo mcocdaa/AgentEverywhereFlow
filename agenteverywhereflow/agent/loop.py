@@ -35,10 +35,34 @@ class AgentLoop:
     def client(self) -> Any:
         """Lazily initialize OpenAI client on demand."""
         if self._client is None:
+            if not self.config.api_key:
+                import typer
+                from rich.panel import Panel
+
+                self.console.print(
+                    Panel(
+                        "[bold red]❌ No API Key configured![/bold red]\n\n"
+                        "Please configure your API key using one of the following methods:\n\n"
+                        "[bold cyan]Method 1 (Command Line):[/bold cyan]\n"
+                        '  [yellow]aef config --set-key "sk-your-api-key"[/yellow]\n'
+                        '  [dim]Optionally set custom Base URL:[/dim] [yellow]aef config --set-base "https://api.openai.com/v1"[/yellow]\n\n'
+                        "[bold cyan]Method 2 (Global Config File):[/bold cyan]\n"
+                        "  Edit or create [yellow]~/.aef/.env[/yellow] and add:\n"
+                        "  [dim]AEF_API_KEY=sk-your-api-key[/dim]\n"
+                        "  [dim]AEF_BASE_URL=https://api.openai.com/v1[/dim]\n\n"
+                        "[bold cyan]Method 3 (Environment Variable):[/bold cyan]\n"
+                        '  PowerShell: [yellow]$env:AEF_API_KEY="sk-your-key"[/yellow] or [yellow]$env:OPENAI_API_KEY="sk-your-key"[/yellow]\n'
+                        '  Linux/macOS: [yellow]export AEF_API_KEY="sk-your-key"[/yellow]',
+                        title="🔑 LLM Authentication Required",
+                        border_style="red",
+                    )
+                )
+                raise typer.Exit(1)
+
             from openai import OpenAI
 
             self._client = OpenAI(
-                api_key=self.config.api_key or "sk-fake",
+                api_key=self.config.api_key,
                 base_url=self.config.base_url,
             )
         return self._client
