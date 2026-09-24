@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>人机身份验证 - AEFlow 演示</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+    body {
+      background-color: #f1f5f9;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .widget-container {
+      background: #ffffff;
+      border: 1px solid #cbd5e1;
+      border-radius: 12px;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
+      width: 420px;
+      overflow: hidden;
+    }
+    .header {
+      background: #2563eb;
+      color: #ffffff;
+      padding: 16px 20px;
+    }
+    .header h2 {
+      font-size: 14px;
+      font-weight: 500;
+      opacity: 0.9;
+      margin-bottom: 4px;
+    }
+    .header .instruction {
+      font-size: 20px;
+      font-weight: 700;
+    }
+    .header .subtext {
+      font-size: 13px;
+      opacity: 0.85;
+      margin-top: 2px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 6px;
+      padding: 16px;
+      background: #f8fafc;
+    }
+    .grid-cell {
+      position: relative;
+      aspect-ratio: 1 / 1;
+      background: #ffffff;
+      border: 2px solid #e2e8f0;
+      border-radius: 8px;
+      cursor: pointer;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s ease;
+      user-select: none;
+    }
+    .grid-cell:hover {
+      border-color: #94a3b8;
+      transform: scale(1.02);
+    }
+    .grid-cell.selected {
+      border-color: #2563eb;
+      background: #eff6ff;
+    }
+    .grid-cell .cell-icon {
+      font-size: 48px;
+      margin-bottom: 4px;
+    }
+    .grid-cell .cell-label {
+      font-size: 13px;
+      font-weight: 600;
+      color: #334155;
+    }
+    .grid-cell .checkmark {
+      display: none;
+      position: absolute;
+      top: 6px;
+      right: 6px;
+      width: 24px;
+      height: 24px;
+      background: #2563eb;
+      color: white;
+      border-radius: 50%;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      font-weight: bold;
+    }
+    .grid-cell.selected .checkmark {
+      display: flex;
+    }
+    .footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 14px 20px;
+      border-top: 1px solid #e2e8f0;
+      background: #ffffff;
+    }
+    .brand {
+      font-size: 12px;
+      color: #94a3b8;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .brand-logo {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: #2563eb;
+      display: inline-block;
+    }
+    .actions {
+      display: flex;
+      gap: 10px;
+    }
+    button {
+      padding: 10px 20px;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: all 0.15s ease;
+    }
+    .btn-skip {
+      background: #f1f5f9;
+      color: #64748b;
+    }
+    .btn-skip:hover {
+      background: #e2e8f0;
+    }
+    .btn-verify {
+      background: #2563eb;
+      color: #ffffff;
+    }
+    .btn-verify:hover {
+      background: #1d4ed8;
+    }
+    .result-banner {
+      margin-top: 16px;
+      padding: 12px 24px;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 15px;
+      display: none;
+      animation: fadeIn 0.3s ease;
+    }
+    .result-success {
+      background: #dcfce7;
+      color: #15803d;
+      border: 1px solid #86efac;
+    }
+    .result-error {
+      background: #fee2e2;
+      color: #b91c1c;
+      border: 1px solid #fca5a5;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(-6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="widget-container">
+    <div class="header">
+      <h2>安全人机验证 (Cloudflare/reCAPTCHA 样式)</h2>
+      <div class="instruction">请选出所有包含【猫咪 (Cat)】的图片</div>
+      <div class="subtext">点击所有符合条件的方格，然后点击右下角的“验证”按钮</div>
+    </div>
+
+    <div class="grid" id="grid">
+      <!-- 1: Cat (Target) -->
+      <div class="grid-cell" data-target="true" onclick="toggleCell(this)">
+        <span class="cell-icon">🐱</span>
+        <span class="cell-label">猫咪 1</span>
+        <div class="checkmark">✓</div>
+      </div>
+      <!-- 2: Dog -->
+      <div class="grid-cell" data-target="false" onclick="toggleCell(this)">
+        <span class="cell-icon">🐶</span>
+        <span class="cell-label">小狗</span>
+        <div class="checkmark">✓</div>
+      </div>
+      <!-- 3: Car -->
+      <div class="grid-cell" data-target="false" onclick="toggleCell(this)">
+        <span class="cell-icon">🚗</span>
+        <span class="cell-label">汽车</span>
+        <div class="checkmark">✓</div>
+      </div>
+      <!-- 4: Cat (Target) -->
+      <div class="grid-cell" data-target="true" onclick="toggleCell(this)">
+        <span class="cell-icon">🐱</span>
+        <span class="cell-label">猫咪 2</span>
+        <div class="checkmark">✓</div>
+      </div>
+      <!-- 5: Tree -->
+      <div class="grid-cell" data-target="false" onclick="toggleCell(this)">
+        <span class="cell-icon">🌳</span>
+        <span class="cell-label">树木</span>
+        <div class="checkmark">✓</div>
+      </div>
+      <!-- 6: Airplane -->
+      <div class="grid-cell" data-target="false" onclick="toggleCell(this)">
+        <span class="cell-icon">✈️</span>
+        <span class="cell-label">飞机</span>
+        <div class="checkmark">✓</div>
+      </div>
+      <!-- 7: Coffee -->
+      <div class="grid-cell" data-target="false" onclick="toggleCell(this)">
+        <span class="cell-icon">☕</span>
+        <span class="cell-label">咖啡</span>
+        <div class="checkmark">✓</div>
+      </div>
+      <!-- 8: Cat (Target) -->
+      <div class="grid-cell" data-target="true" onclick="toggleCell(this)">
+        <span class="cell-icon">🐱</span>
+        <span class="cell-label">猫咪 3</span>
+        <div class="checkmark">✓</div>
+      </div>
+      <!-- 9: Bicycle -->
+      <div class="grid-cell" data-target="false" onclick="toggleCell(this)">
+        <span class="cell-icon">🚲</span>
+        <span class="cell-label">自行车</span>
+        <div class="checkmark">✓</div>
+      </div>
+    </div>
+
+    <div class="footer">
+      <div class="brand">
+        <span class="brand-logo"></span>
+        <span>AEFlow Security Shield</span>
+      </div>
+      <div class="actions">
+        <button class="btn-skip" onclick="resetCaptcha()">重置</button>
+        <button class="btn-verify" id="btn-verify" onclick="verifyCaptcha()">验证</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="result" class="result-banner"></div>
+
+  <script>
+    function toggleCell(cell) {
+      cell.classList.toggle('selected');
+      hideResult();
+    }
+
+    function hideResult() {
+      const banner = document.getElementById('result');
+      banner.style.display = 'none';
+      banner.className = 'result-banner';
+    }
+
+    function resetCaptcha() {
+      const cells = document.querySelectorAll('.grid-cell');
+      cells.forEach(c => c.classList.remove('selected'));
+      hideResult();
+    }
+
+    function verifyCaptcha() {
+      const cells = document.querySelectorAll('.grid-cell');
+      let allCorrect = true;
+      let selectedCount = 0;
+
+      cells.forEach(c => {
+        const isTarget = c.getAttribute('data-target') === 'true';
+        const isSelected = c.classList.contains('selected');
+        if (isSelected) selectedCount++;
+        if (isTarget !== isSelected) {
+          allCorrect = false;
+        }
+      });
+
+      const banner = document.getElementById('result');
+      banner.style.display = 'block';
+
+      if (allCorrect && selectedCount === 3) {
+        banner.className = 'result-banner result-success';
+        banner.innerText = '🎉 验证成功！所有猫咪已准确选出 (SUCCESS: Verified)';
+        document.getElementById('btn-verify').style.backgroundColor = '#16a34a';
+        document.getElementById('btn-verify').innerText = '已通过';
+      } else {
+        banner.className = 'result-banner result-error';
+        banner.innerText = '❌ 验证未通过：请重新识别所有包含猫咪的方块！';
+      }
+    }
+  </script>
+</body>
+</html>
