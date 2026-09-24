@@ -1,5 +1,6 @@
 """Control Execution Mode: Guarded atomic tool calls with safety intercepts."""
 
+import sys
 from typing import Any
 
 from rich.console import Console
@@ -16,7 +17,7 @@ class GuardedActionEngine(BaseExecutionEngine):
     """Executes atomic, strictly validated tool calls with permission gates."""
 
     def __init__(self) -> None:
-        self.console = Console()
+        self.console = Console(file=sys.__stdout__ or sys.stdout)
 
     def _print_action(self, text: str) -> None:
         try:

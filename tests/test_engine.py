@@ -51,3 +51,16 @@ def test_guarded_action_engine_wait_and_finish() -> None:
     res_finish = engine.execute({"action": "finish", "message": "All done!"}, target)
     assert res_finish.success is True
     assert res_finish.data.get("finished") is True
+
+
+def test_python_repl_engine_tool_calls_do_not_leak_into_output() -> None:
+    engine = PythonReplEngine()
+    target = get_mock_target()
+
+    # Tool calls like wait(), click() should print real-time events without polluting result.output
+    code = """
+wait(0.001)
+"""
+    result = engine.execute(code, target)
+    assert result.success is True
+    assert result.output == ""

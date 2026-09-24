@@ -8,6 +8,7 @@ from typing import Any
 
 from PIL import Image
 from rich.console import Console
+from rich.markup import escape
 from rich.panel import Panel
 
 from agenteverywhereflow.agent.prompts import get_prompt_for_target
@@ -15,6 +16,46 @@ from agenteverywhereflow.capturer import get_capturer
 from agenteverywhereflow.capturer.base import TargetInfo
 from agenteverywhereflow.config import AppConfig, ExecutionMode, config
 from agenteverywhereflow.engine import get_engine
+
+
+def extract_codeact_blocks(text: str) -> str:
+    """Extract and combine all Python code blocks from the assistant's response.
+
+    Accommodates multiple code fences produced within a single reasoning turn,
+    e.g., clicking/typing in one fence followed by pressing a key in a second fence.
+    """
+    # 1. Explicit python/py code blocks
+    py_matches = re.findall(
+        r"```(?:python|py)\b[ \t]*(?:\n)?(.*?)(?:```|$)",
+        text,
+        re.DOTALL | re.IGNORECASE,
+    )
+    blocks = [m.strip() for m in py_matches if m.strip()]
+    if blocks:
+        return "\n\n".join(blocks)
+
+    # 2. Generic code blocks, excluding non-python data languages
+    all_fences = list(
+        re.finditer(
+            r"```([a-zA-Z0-9_-]*)[ \t]*(?:\n)?(.*?)(?:```|$)",
+            text,
+            re.DOTALL,
+        )
+    )
+    if not all_fences:
+        return ""
+
+    ignored_langs = {"json", "yaml", "yml", "xml", "html", "markdown", "md", "txt", "sh", "bash"}
+    valid_blocks: list[str] = []
+    for m in all_fences:
+        lang = m.group(1).lower().strip()
+        code = m.group(2).strip()
+        if lang in ignored_langs:
+            continue
+        if code:
+            valid_blocks.append(code)
+
+    return "\n\n".join(valid_blocks)
 
 
 class AgentLoop:
@@ -250,10 +291,8 @@ class AgentLoop:
             action_success = False
 
             if is_minimal:
-                # Extract python block
-                code_match = re.search(r"```(?:python)?\s*(.*?)\s*```", assistant_text, re.DOTALL)
-                if code_match:
-                    code_to_exec = code_match.group(1).strip()
+                code_to_exec = extract_codeact_blocks(assistant_text)
+                if code_to_exec:
                     self.console.print(
                         Panel(
                             code_to_exec,
@@ -277,13 +316,13 @@ class AgentLoop:
                         self.console.print(
                             f"  [bold red]❌ Execution Failed:[/bold red] {result.error}"
                         )
-                    if result.output:
-                        self.console.print(f"  [dim]Output: {result.output}[/dim]")
+                    if result.output.strip():
+                        self.console.print(f"  [dim]Output: {escape(result.output.strip())}[/dim]")
 
                     # Append execution feedback into conversation history
                     feedback = (
                         f"Action execution result: success={result.success}\n"
-                        f"Output: {result.output or 'None'}\n"
+                        f"Output: {result.output.strip() or 'None'}\n"
                         f"Error: {result.error or 'None'}"
                     )
                     messages.append(
@@ -333,12 +372,14 @@ class AgentLoop:
                             self.console.print(
                                 f"  [bold red]❌ Execution Failed:[/bold red] {result.error}"
                             )
-                        if result.output:
-                            self.console.print(f"  [dim]Output: {result.output}[/dim]")
+                        if result.output.strip():
+                            self.console.print(
+                                f"  [dim]Output: {escape(result.output.strip())}[/dim]"
+                            )
 
                         feedback = (
                             f"Action execution result: success={result.success}\n"
-                            f"Output: {result.output or 'None'}\n"
+                            f"Output: {result.output.strip() or 'None'}\n"
                             f"Error: {result.error or 'None'}"
                         )
                         messages.append(

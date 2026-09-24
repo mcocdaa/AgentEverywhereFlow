@@ -23,7 +23,7 @@ class PythonReplEngine(BaseExecutionEngine):
 
     def __init__(self) -> None:
         self.capturer = get_capturer()
-        self.console = Console()
+        self.console = Console(file=sys.__stdout__ or sys.stdout)
 
     def _print_action(self, text: str) -> None:
         try:
