@@ -5,6 +5,33 @@
 
 ---
 
+## [0.1.3] - 2026-09-24
+
+### 真实场景演示与资产 (Visual Showcases & Demos)
+- **README 首屏加入真实运行双场景动图**：
+  - **九宫格人机验证破解 (`demo_captcha.gif`)**：零样本多模态视觉空间定位，自动识别 3 张猫咪图片并点击打勾，成功通过验证。
+  - **Excel 表格自动公式统计 (`demo_excel.gif`)**：投屏绑定 Excel 窗口，自动定位销售额求和空白单元格，注入 `=SUM(D2:D6)` 公式并回车完成计算。
+- **开箱即用演示页面与数据套件**：
+  - 新增交互式 9 宫格安全人机验证演示页面（`examples/captcha_demo.html`）。
+  - 新增销售报表 Excel 生成与演示套件（`examples/generate_excel_demo.py`, `examples/sales_demo.xlsx`）。
+
+### 核心引擎强化 (Core Engine Enhancements)
+- **多代码块 CodeAct 序列合并执行**：
+  - 引入 `extract_codeact_blocks`，自动收集同一回复轮次中模型输出的所有有效 Python 代码块并顺序合并执行，彻底解决复杂思考过程中分块输出导致后续动作（如 `press("enter")`）被遗漏的问题。
+- **终端转义隔离与实时上屏保护**：
+  - 动作日志 Console 明确绑定底层物理终端 `sys.__stdout__`，彻底杜绝 Rich ANSI 控制码污染代码执行缓冲区导致的终端乱码现象。
+  - 仅在用户代码主动调用 `print` 时安全转义并打印 `Output:`。
+- **全局环境配置与 CLI 便捷命令 (`aef config`)**：
+  - 支持 `~/.aef/.env` 全局配置文件与多层级配置级联加载。
+  - 自动向下兼容标准 `OPENAI_API_KEY`、`OPENAI_BASE_URL` 与 `OPENAI_MODEL_NAME` 环境变量。
+  - 新增 `aef config --set-key`、`--set-base`、`--set-model` CLI 配置命令与缺失密钥友好引导面板。
+- **历史截图上下文滑动窗口裁剪**：
+  - 自动修剪历史多轮截图为文本占位标记，保护上下文 Token 额度。
+- **Windows 控制台编码容错**：
+  - 提供 UTF-8 控制台重配置与 emoji 降级支持，防止 Windows GBK/charmap 代码页编码崩溃。
+
+---
+
 ## [0.1.2] - 2026-09-23
 
 ### 修复与强化 (Fixed & Enhanced)

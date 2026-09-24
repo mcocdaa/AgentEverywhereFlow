@@ -17,6 +17,26 @@
 
 ---
 
+<div align="center">
+
+### 🎬 真实场景自动化演示 (Real-World Demos)
+
+**场景 1：浏览器多模态空间感知与九宫格人机验证破解**
+<br/>
+<img src="docs/assets/demo_captcha.gif" alt="AEFlow 九宫格人机验证演示" width="820">
+<br/>
+<em>零样本视觉空间定位：Agent 投屏绑定浏览器窗口，毫秒级理解九宫格任务要求，精准辨识 3 张猫咪图片依次点击打勾，并点击右下角按钮通过人机验证。</em>
+
+<br/><br/>
+
+**场景 2：桌面办公自动化与 Excel 表格公式自动求和**
+<br/>
+<img src="docs/assets/demo_excel.gif" alt="AEFlow Excel 自动求和演示" width="820">
+<br/>
+<em>桌面生产力闭环：Agent 投屏绑定 Excel 窗口，自动定位销售额列下方的空白总计单元格，注入 <code>=SUM(D2:D6)</code> 公式并敲下回车完成统计。</em>
+
+</div>
+
 ## 💡 为什么需要 AgentEverywhereFlow？
 
 现有的计算机操作智能体（Computer-Use Agent）通常存在三大痛点：

@@ -18,6 +18,26 @@
 
 ---
 
+<div align="center">
+
+### 🎬 Real-World Autonomous Demos (真实运行演示)
+
+**Scenario 1: 9-Grid Visual CAPTCHA Solving & Autonomous Grounding**
+<br/>
+<img src="docs/assets/demo_captcha.gif" alt="AEFlow 9-Grid Captcha Demo" width="820">
+<br/>
+<em>Zero-shot multimodal spatial grounding: Agent targets browser window, identifies all 3 cat tiles in a 9-grid challenge, clicks each with visual checks, and passes verification.</em>
+
+<br/><br/>
+
+**Scenario 2: Office Spreadsheet Automation & Formula Calculation**
+<br/>
+<img src="docs/assets/demo_excel.gif" alt="AEFlow Excel Summation Demo" width="820">
+<br/>
+<em>Desktop productivity: Agent targets Microsoft Excel window, locates target Total cell, injects <code>=SUM(D2:D6)</code> formula, and calculates total sales.</em>
+
+</div>
+
 ## 💡 Why AgentEverywhereFlow?
 
 Existing computer-use and GUI automation agents suffer from three major roadblocks:
