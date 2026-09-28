@@ -401,6 +401,12 @@ def chat(
     debug: bool = typer.Option(
         False, "--debug", "-d", help="Enable verbose debug logging and diagnostics"
     ),
+    max_steps: int | None = typer.Option(
+        None,
+        "--max-steps",
+        "-s",
+        help="Max agent action steps allowed per dialogue turn (default: from config)",
+    ),
 ) -> None:
     """Launch an interactive multi-turn dialogue session with the agent bound to a window or display."""
     from rich.markup import escape
@@ -750,9 +756,21 @@ def chat(
 
         # Regular user instruction: execute turn
         console.rule(f"[bold blue]Turn {session.turn_count + 1}[/bold blue]")
-        turn_res = session.execute_turn(user_input)
+        turn_res = session.execute_turn(user_input, max_steps=max_steps)
         if not turn_res.success and turn_res.error:
             console.print(f"[bold red]Turn failed: {turn_res.error}[/bold red]")
+        elif not turn_res.completed:
+            console.print(
+                Panel(
+                    f"[bold yellow]⚠️ Reached turn step limit ({turn_res.steps_executed} steps) without conclusion.[/bold yellow]\n"
+                    f"[dim]The agent executed {turn_res.steps_executed} steps in this turn (e.g. repeated scrolling, waiting, or inspecting).\n"
+                    f"Conversation context and memory are preserved. You can enter your next prompt directly to continue, e.g.:\n"
+                    f"  - '总结刚才讨论的核心内容，给出结论'\n"
+                    f"  - '继续向豆包提问并推进讨论'[/dim]",
+                    title="⏸️ Step Limit Reached (Waiting for User Input)",
+                    border_style="yellow",
+                )
+            )
 
 
 @app.command(name="serve")

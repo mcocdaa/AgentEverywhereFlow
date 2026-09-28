@@ -338,9 +338,10 @@ class ChatSession:
     def execute_turn(
         self,
         user_instruction: str,
-        max_steps: int = 15,
+        max_steps: int | None = None,
     ) -> TurnResult:
         """Execute a conversational dialogue turn against the target."""
+        effective_max_steps = max_steps if max_steps is not None else self.config.max_steps
         self.turn_count += 1
         self.state = SessionState.RUNNING
         self.emit_event(
@@ -364,7 +365,7 @@ class ChatSession:
         is_minimal = self.mode == ExecutionMode.MINIMAL_PYTHON
         turn_steps = 0
 
-        while turn_steps < max_steps:
+        while turn_steps < effective_max_steps:
             turn_steps += 1
             self.total_steps += 1
 

@@ -39,6 +39,10 @@ Guidelines:
      2) You require no further actions, observations, or UI updates.
      3) If the user asked a question or requested information, that final answer is fully included in your message.
    - NEVER output TASK_COMPLETED if you plan to do anything next (e.g. "let me check...", "next I will report...").
+5. Efficiency & Anti-Looping:
+   - Budget your steps wisely: do NOT spend excessive steps repeatedly scrolling back and forth or waiting in a loop.
+   - When reading text from chat windows or documents, capture the main takeaways in 1-2 scroll operations rather than repeatedly micro-scrolling step after step.
+   - If the user asks for a discussion, question, or conclusion, proceed promptly to interact (type, ask question, or conclude) once you have grasped the key context.
 """
 
 GUARDED_MODE_SYSTEM_PROMPT = """You are AgentEverywhereFlow, an autonomous GUI agent operating with strict permission-controlled atomic tool calls.
@@ -67,6 +71,10 @@ Explain your reasoning briefly, then provide a single JSON block formatted as:
   "y": 120
 }}
 ```
+
+Guidelines:
+- Budget your steps wisely: avoid repeated micro-scrolling or waiting in a loop.
+- Use {{"action": "finish", "message": "..."}} to declare completion when the user's request is accomplished.
 """
 
 

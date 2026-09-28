@@ -209,3 +209,29 @@ def test_session_manager_restore_and_latest() -> None:
     latest = mgr.get_latest_session()
     assert latest is not None
     assert latest.session_id == "test-restore-01"
+
+
+def test_chat_session_max_steps_limit() -> None:
+    """Verify that execute_turn respects max_steps and stops gracefully when reaching step limit."""
+    target = _make_dummy_target("Loop Target")
+
+    # Planner that keeps taking intermediate actions without completing
+    def infinite_scroller(messages: list[dict[str, Any]], tgt: TargetInfo, step: int) -> str:
+        return "Still reading, let me scroll.\n```python\nwait(0.01)\n```"
+
+    session = ChatSession(
+        target=target,
+        mode=ExecutionMode.MINIMAL_PYTHON,
+        permission_mode=PermissionMode.AUTO,
+        planner_func=infinite_scroller,
+    )
+    session.capturer.capture = MagicMock(return_value=Image.new("RGB", (100, 100), color="white"))
+    session.capturer.focus = MagicMock()
+
+    # Test with max_steps=3
+    res = session.execute_turn("Keep scrolling", max_steps=3)
+    assert res.success is True
+    assert res.completed is False
+    assert res.steps_executed == 3
+    assert "Step limit reached" in res.response
+    assert session.state == SessionState.WAITING_INPUT
