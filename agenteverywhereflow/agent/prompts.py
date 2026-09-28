@@ -22,7 +22,7 @@ In your Python environment, the following helper functions and objects are pre-i
 5. `type_text("text")`: Types text into the currently active element.
 6. `press("enter" | "esc" | "tab" | "backspace" | ...)`: Presses a single key.
 7. `hotkey("ctrl", "c")`: Triggers key combinations.
-8. `scroll(amount)`: Scrolls mouse wheel (positive for up, negative for down).
+8. `scroll(amount, x=None, y=None)`: Scrolls mouse wheel (positive for up, negative for down). Provide (x, y) coordinates to place the mouse over the scrollable container before scrolling.
 9. `wait(seconds)`: Sleeps for N seconds.
 10. `target`: TargetInfo object with details of the current window.
 
@@ -54,7 +54,7 @@ Available JSON Action Schemas:
 3. Type: {{"action": "type", "text": "<string>"}}
 4. Press Key: {{"action": "press", "key": "<key_name>"}}
 5. Hotkey: {{"action": "hotkey", "keys": ["<key1>", "<key2>"]}}
-6. Scroll: {{"action": "scroll", "amount": <int>}}
+6. Scroll: {{"action": "scroll", "amount": <int>, "x": <int|null>, "y": <int|null>}}
 7. Wait: {{"action": "wait", "seconds": <float>}}
 8. Finish: {{"action": "finish", "message": "<completion_summary>"}}
 

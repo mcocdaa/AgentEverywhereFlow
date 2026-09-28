@@ -222,6 +222,27 @@ class InputDriver:
 
     def scroll(self, amount: int, x: int | None = None, y: int | None = None) -> None:
         """Scroll vertical wheel. Positive is up, negative is down."""
+        if sys.platform == "win32":
+            try:
+                import win32api
+                import win32con
+
+                if x is not None and y is not None:
+                    win32api.SetCursorPos((x, y))
+                    time.sleep(0.02)
+
+                # In Windows Win32 API, 1 wheel notch is WHEEL_DELTA = 120.
+                # LLMs pass amounts like 5, 12, 20 meaning N notches/steps.
+                # PyAutoGUI on Windows fails to scale amount by WHEEL_DELTA, causing micro-scrolls.
+                clicks = int(amount)
+                delta = clicks * 120 if abs(clicks) < 120 else clicks
+
+                win32api.mouse_event(win32con.MOUSEEVENTF_WHEEL, 0, 0, delta, 0)
+                time.sleep(0.02)
+                return
+            except Exception:
+                pass
+
         backend = self._get_backend()
         if backend:
             if x is not None and y is not None:

@@ -127,11 +127,18 @@ class GuardedActionEngine(BaseExecutionEngine):
 
             elif action == "scroll":
                 amount = int(payload.get("amount", 0))
+                gx = payload.get("x")
+                gy = payload.get("y")
+                pos_info = f" at ({gx}, {gy})" if gx is not None and gy is not None else ""
                 self._print_action(
-                    f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]scroll[/bold cyan](amount={amount})"
+                    f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]scroll[/bold cyan](amount={amount}{pos_info})"
                 )
-                driver.scroll(amount)
-                return ExecutionResult(success=True, output=f"Scrolled {amount}")
+                if gx is not None and gy is not None:
+                    sx, sy = CoordinateProjector.to_screen_coords(target, float(gx), float(gy))
+                    driver.scroll(amount, x=sx, y=sy)
+                else:
+                    driver.scroll(amount)
+                return ExecutionResult(success=True, output=f"Scrolled {amount}{pos_info}")
 
             elif action == "wait":
                 seconds = float(payload.get("seconds", 1.0))
