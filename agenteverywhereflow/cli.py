@@ -229,6 +229,12 @@ def chat(
         "-t",
         help="Target ID, native handle, table index, or process/title substring. If omitted, opens interactive picker.",
     ),
+    resume: str | None = typer.Option(
+        None,
+        "--resume",
+        "-r",
+        help="Resume a saved session by ID or 'latest' to restore dialogue memory and KV cache.",
+    ),
     mode: ExecutionMode = typer.Option(
         ExecutionMode.MINIMAL_PYTHON,
         "--mode",
@@ -251,7 +257,12 @@ def chat(
     from agenteverywhereflow.capturer import get_capturer
     from agenteverywhereflow.capturer.selector import TargetSelector, resolve_target
     from agenteverywhereflow.config import config
-    from agenteverywhereflow.session import ChatSession, SessionEvent, SessionEventType
+    from agenteverywhereflow.session import (
+        ChatSession,
+        SessionEvent,
+        SessionEventType,
+        session_manager,
+    )
 
     if debug:
         config.debug = True
@@ -259,27 +270,54 @@ def chat(
     capturer = get_capturer()
     all_targets = capturer.list_targets()
 
-    # Resolve target
+    session: ChatSession
     selected = None
-    if target_query:
-        selected = resolve_target(all_targets, target_query)
-        if not selected:
-            console.print(
-                f"[bold red]❌ No target found matching query: '{target_query}'[/bold red]"
-            )
-            console.print(
-                "[dim]Run 'aef list-targets' to view all available Target IDs and indices.[/dim]"
-            )
-            raise typer.Exit(1)
-    else:
-        selector = TargetSelector()
-        selected = selector.interactive_select()
-        if not selected:
-            console.print("[yellow]Dialogue session cancelled.[/yellow]")
-            raise typer.Exit(0)
 
-    # Initialize conversational session
-    session = ChatSession(target=selected, mode=mode, permission_mode=permission)
+    if resume:
+        if resume.lower() in ("latest", "last"):
+            found_session = session_manager.get_latest_session()
+            if not found_session:
+                console.print("[bold red]❌ No existing saved session found to resume.[/bold red]")
+                raise typer.Exit(1)
+            session = found_session
+        else:
+            found_session = session_manager.get_session(resume) or session_manager.restore_session(
+                resume
+            )
+            if not found_session:
+                console.print(f"[bold red]❌ Saved session '{resume}' not found.[/bold red]")
+                raise typer.Exit(1)
+            session = found_session
+
+        selected = session.target
+        console.print(
+            f"[bold green]✓ Successfully resumed session '{session.session_id}'! "
+            f"(Turns: {session.turn_count}, Steps: {session.total_steps}, "
+            f"KV Cache Hit Rate: {session.token_usage.cache_hit_rate}%)[/bold green]"
+        )
+    else:
+        # Resolve target
+        if target_query:
+            selected = resolve_target(all_targets, target_query)
+            if not selected:
+                console.print(
+                    f"[bold red]❌ No target found matching query: '{target_query}'[/bold red]"
+                )
+                console.print(
+                    "[dim]Run 'aef list-targets' to view all available Target IDs and indices.[/dim]"
+                )
+                raise typer.Exit(1)
+        else:
+            selector = TargetSelector()
+            selected = selector.interactive_select()
+            if not selected:
+                console.print("[yellow]Dialogue session cancelled.[/yellow]")
+                raise typer.Exit(0)
+
+        # Initialize conversational session
+        session = session_manager.create_session(
+            target=selected, mode=mode, permission_mode=permission
+        )
 
     # Attach live Rich terminal event listener
     def on_session_event(event: SessionEvent) -> None:
@@ -451,8 +489,11 @@ def chat(
                         f"[bold]Turns Completed:[/bold] {session.turn_count} | [bold]Total Steps:[/bold] {session.total_steps}\n"
                         f"[bold]Permission:[/bold] {session.permission_gate.mode.value.upper()}\n"
                         f"[bold]Execution Mode:[/bold] {session.mode.value.upper()}\n"
-                        f"[bold]State:[/bold] {session.state.value.upper()}",
-                        title="📊 Session Diagnostics",
+                        f"[bold]KV Cache Hit Rate:[/bold] [bold green]{session.token_usage.cache_hit_rate}%[/bold green] ({session.token_usage.cached_prompt_tokens} / {session.token_usage.prompt_tokens} cached prompt tokens)\n"
+                        f"[bold]Total Tokens:[/bold] {session.token_usage.total_tokens} (Prompt: {session.token_usage.prompt_tokens}, Completion: {session.token_usage.completion_tokens})\n"
+                        f"[bold]State:[/bold] {session.state.value.upper()}\n"
+                        f"[bold]Persisted Storage:[/bold] ~/.aef/sessions/{session.session_id}/",
+                        title="📊 Session Diagnostics & Token Metrics",
                         border_style="cyan",
                     )
                 )
@@ -506,6 +547,127 @@ def serve(
         port=bind_port,
         factory=True,
         reload=reload,
+    )
+
+
+session_app = typer.Typer(
+    name="session",
+    help="Manage persistent dialogue sessions, trajectory history, and audit exports.",
+    add_completion=False,
+)
+app.add_typer(session_app, name="session")
+
+
+@session_app.command(name="list")
+def list_saved_sessions() -> None:
+    """List all persisted sessions with turns, steps, and KV cache statistics."""
+    import datetime
+
+    from rich.table import Table
+
+    from agenteverywhereflow.session import session_storage
+
+    sessions = session_storage.list_sessions()
+    if not sessions:
+        console.print("[dim]No saved sessions found in ~/.aef/sessions/[/dim]")
+        return
+
+    table = Table(title="📁 Persisted AEFlow Dialogue Sessions")
+    table.add_column("Session ID", style="bold cyan")
+    table.add_column("Target Title", style="green")
+    table.add_column("Turns", justify="right")
+    table.add_column("Steps", justify="right")
+    table.add_column("KV Cache Hit", style="magenta", justify="right")
+    table.add_column("Permission", style="yellow")
+    table.add_column("Last Updated", style="dim")
+
+    for s in sessions:
+        upd = datetime.datetime.fromtimestamp(s.updated_at).strftime("%Y-%m-%d %H:%M")
+        hit_str = f"{s.token_usage.cache_hit_rate}%" if s.token_usage.prompt_tokens > 0 else "N/A"
+        table.add_row(
+            s.session_id,
+            s.target_title[:24],
+            str(s.turn_count),
+            str(s.total_steps),
+            hit_str,
+            s.permission_mode.upper(),
+            upd,
+        )
+    console.print(table)
+
+
+@session_app.command(name="show")
+def show_session(session_id: str) -> None:
+    """Display detailed trajectory and token statistics for a session."""
+    import datetime
+
+    from agenteverywhereflow.session import session_storage
+
+    meta = session_storage.load_metadata(session_id)
+    if not meta:
+        console.print(f"[bold red]Session '{session_id}' not found.[/bold red]")
+        raise typer.Exit(1)
+
+    created = datetime.datetime.fromtimestamp(meta.created_at).strftime("%Y-%m-%d %H:%M:%S")
+    updated = datetime.datetime.fromtimestamp(meta.updated_at).strftime("%Y-%m-%d %H:%M:%S")
+
+    console.print(
+        Panel(
+            f"[bold cyan]Session ID:[/bold cyan] {meta.session_id}\n"
+            f"[bold cyan]Target:[/bold cyan] {meta.target_title} ({meta.target_id})\n"
+            f"[bold cyan]Permission:[/bold cyan] {meta.permission_mode.upper()} | [bold cyan]Mode:[/bold cyan] {meta.mode.upper()}\n"
+            f"[bold cyan]Turns Completed:[/bold cyan] {meta.turn_count} | [bold cyan]Total Steps:[/bold cyan] {meta.total_steps}\n"
+            f"[bold cyan]Tokens:[/bold cyan] Prompt={meta.token_usage.prompt_tokens}, Cached={meta.token_usage.cached_prompt_tokens} (Hit Rate: [bold green]{meta.token_usage.cache_hit_rate}%[/bold green]), Completion={meta.token_usage.completion_tokens}\n"
+            f"[bold cyan]Timeline:[/bold cyan] Created={created} | Updated={updated}\n"
+            f"[bold cyan]Status:[/bold cyan] {meta.state.upper()}",
+            title=f"📋 Session Audit Record: {session_id}",
+            border_style="cyan",
+        )
+    )
+
+
+@session_app.command(name="delete")
+def delete_session(session_id: str) -> None:
+    """Delete a saved session and its trajectory from disk."""
+    from agenteverywhereflow.session import session_storage
+
+    success = session_storage.delete_session(session_id)
+    if success:
+        console.print(
+            f"[bold green]✓ Session '{session_id}' deleted from ~/.aef/sessions/[/bold green]"
+        )
+    else:
+        console.print(f"[bold red]❌ Failed to delete session '{session_id}'.[/bold red]")
+
+
+@session_app.command(name="export")
+def export_session(
+    session_id: str,
+    output: str | None = typer.Option(None, "--output", "-o", help="Target output file path"),
+) -> None:
+    """Export complete session trajectory and metadata to JSON file."""
+    import json
+    from pathlib import Path
+
+    from agenteverywhereflow.session import session_storage
+
+    meta = session_storage.load_metadata(session_id)
+    if not meta:
+        console.print(f"[bold red]Session '{session_id}' not found.[/bold red]")
+        raise typer.Exit(1)
+
+    messages = session_storage.load_messages(session_id)
+    export_payload = {
+        "metadata": meta.model_dump(),
+        "trajectory": messages,
+    }
+
+    out_path = Path(output) if output else Path(f"session_export_{session_id}.json")
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(export_payload, f, indent=2, ensure_ascii=False)
+
+    console.print(
+        f"[bold green]✓ Session '{session_id}' exported to {out_path.resolve()}[/bold green]"
     )
 
 

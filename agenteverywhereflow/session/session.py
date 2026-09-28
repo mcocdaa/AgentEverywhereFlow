@@ -6,8 +6,10 @@ import json
 import logging
 import re
 import threading
+import time
 import uuid
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from PIL import Image
@@ -16,7 +18,7 @@ from pydantic import BaseModel
 from agenteverywhereflow.agent.loop import extract_codeact_blocks
 from agenteverywhereflow.agent.prompts import get_prompt_for_target
 from agenteverywhereflow.capturer import get_capturer
-from agenteverywhereflow.capturer.base import TargetInfo
+from agenteverywhereflow.capturer.base import Rect, TargetInfo, TargetType
 from agenteverywhereflow.config import AppConfig, ExecutionMode, config
 from agenteverywhereflow.engine import get_engine
 from agenteverywhereflow.security.permission import (
@@ -26,6 +28,7 @@ from agenteverywhereflow.security.permission import (
     PermissionMode,
 )
 from agenteverywhereflow.session.state import SessionEvent, SessionEventType, SessionState
+from agenteverywhereflow.session.storage import TokenUsageStats, session_storage
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +70,8 @@ class ChatSession:
         self.state = SessionState.IDLE
         self.turn_count = 0
         self.total_steps = 0
+        self.created_at = time.time()
+        self.token_usage = TokenUsageStats()
 
         self.messages: list[dict[str, Any]] = []
         self._init_system_prompt()
@@ -208,6 +213,85 @@ class ChatSession:
                         new_content.append(part)
                 messages[idx]["content"] = new_content
         return messages
+
+    def freeze_completed_turn(self) -> None:
+        """Freeze and compact screenshots of completed turns into immutable text markers.
+
+        In Prefix Caching architectures (DeepSeek Context Caching, OpenAI Prompt Caching,
+        vLLM, SGLang), prompt tokens must have an exact byte-for-byte prefix match from token 0.
+        By freezing past turns at turn boundaries rather than mutating messages in-flight,
+        the historical conversation prefix remains 100% stable and achieves near-perfect KV cache reuse.
+        """
+        for i in range(len(self.messages)):
+            content = self.messages[i].get("content")
+            if isinstance(content, list):
+                new_content = []
+                has_img = False
+                for part in content:
+                    if isinstance(part, dict) and part.get("type") == "image_url":
+                        has_img = True
+                        new_content.append(
+                            {
+                                "type": "text",
+                                "text": "[Historical viewport observation screenshot frozen in KV cache]",
+                            }
+                        )
+                    else:
+                        new_content.append(part)
+                if has_img:
+                    self.messages[i]["content"] = new_content
+
+    def save(self) -> Path:
+        """Persist current session metadata and trajectory to disk."""
+        return session_storage.save_session(
+            session_id=self.session_id,
+            target=self.target,
+            mode=self.mode,
+            permission_mode=self.permission_gate.mode,
+            state=self.state.value,
+            turn_count=self.turn_count,
+            total_steps=self.total_steps,
+            messages=self.messages,
+            token_usage=self.token_usage,
+            created_at=self.created_at,
+        )
+
+    @classmethod
+    def restore(cls, session_id: str, app_config: AppConfig | None = None) -> "ChatSession | None":
+        """Restore a previously saved session from disk storage."""
+        meta = session_storage.load_metadata(session_id)
+        if not meta:
+            return None
+        raw_messages = session_storage.load_messages(session_id)
+        rect = Rect(
+            x=meta.target_rect.get("x", 0),
+            y=meta.target_rect.get("y", 0),
+            width=meta.target_rect.get("width", 800),
+            height=meta.target_rect.get("height", 600),
+        )
+        target = TargetInfo(
+            target_id=meta.target_id,
+            target_type=TargetType(meta.target_type),
+            title=meta.target_title,
+            process_name=meta.process_name,
+            rect=rect,
+            native_handle=meta.native_handle,
+        )
+        session = cls(
+            target=target,
+            session_id=meta.session_id,
+            mode=ExecutionMode(meta.mode),
+            permission_mode=PermissionMode(meta.permission_mode),
+            app_config=app_config,
+        )
+        session.turn_count = meta.turn_count
+        session.total_steps = meta.total_steps
+        session.token_usage = meta.token_usage
+        session.created_at = meta.created_at
+        session.state = SessionState(meta.state)
+        if raw_messages:
+            session.messages = raw_messages
+        return session
 
     def wait_for_server_approval(self, request: ApprovalRequest) -> ApprovalDecision:
         """Block and wait for external approval via submit_approval() or timeout."""
@@ -354,6 +438,24 @@ class ChatSession:
                         temperature=0.2,
                     )
                     assistant_text = response.choices[0].message.content or ""
+
+                    # Extract Token usage and KV cache hit metrics
+                    usage = getattr(response, "usage", None)
+                    if usage:
+                        p_tok = getattr(usage, "prompt_tokens", 0)
+                        c_tok = getattr(usage, "completion_tokens", 0)
+                        # DeepSeek Context Caching hit tokens:
+                        cached_tok = getattr(usage, "prompt_cache_hit_tokens", 0)
+                        if not cached_tok:
+                            # OpenAI / vLLM cached prompt tokens:
+                            ptd = getattr(usage, "prompt_tokens_details", None)
+                            if ptd:
+                                cached_tok = getattr(ptd, "cached_tokens", 0)
+
+                        self.token_usage.prompt_tokens += p_tok
+                        self.token_usage.completion_tokens += c_tok
+                        self.token_usage.total_tokens += p_tok + c_tok
+                        self.token_usage.cached_prompt_tokens += cached_tok
                 except Exception as e:
                     err_msg = f"LLM API Error: {e}"
                     self.state = SessionState.ERROR
@@ -461,6 +563,8 @@ class ChatSession:
                     if action_name == "finish":
                         msg = payload_data.get("message", "Task finished.")
                         self.state = SessionState.WAITING_INPUT
+                        self.freeze_completed_turn()
+                        self.save()
                         self.emit_event(
                             SessionEventType.TASK_COMPLETED,
                             step=turn_steps,
@@ -540,6 +644,8 @@ class ChatSession:
                 if not executed_action or action_success:
                     summary = assistant_text.split("TASK_COMPLETED")[-1].strip(": \n")
                     self.state = SessionState.WAITING_INPUT
+                    self.freeze_completed_turn()
+                    self.save()
                     self.emit_event(
                         SessionEventType.TASK_COMPLETED,
                         step=turn_steps,
@@ -566,6 +672,8 @@ class ChatSession:
                 )
 
         self.state = SessionState.WAITING_INPUT
+        self.freeze_completed_turn()
+        self.save()
         return TurnResult(
             success=True,
             completed=False,
