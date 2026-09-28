@@ -49,7 +49,7 @@ class AppConfig(BaseSettings):
         default=ExecutionMode.MINIMAL_PYTHON,
         description="Default execution mode: minimal (Python REPL) or guarded (granular)",
     )
-    max_steps: int = Field(default=25, description="Maximum loop steps per task")
+    max_steps: int = Field(default=100, description="Maximum loop steps per task")
     step_timeout_seconds: float = Field(default=30.0, description="Timeout for each execution step")
 
     # Safety & Permission settings

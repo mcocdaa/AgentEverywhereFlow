@@ -31,3 +31,4 @@ def test_config_defaults(monkeypatch):
     cfg = AppConfig()
     assert cfg.model_name == "deepseek-flash"
     assert cfg.base_url == "https://api.deepseek.com"
+    assert cfg.max_steps == 100

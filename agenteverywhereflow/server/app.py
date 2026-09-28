@@ -31,7 +31,7 @@ class CreateSessionRequest(BaseModel):
 
 class SendMessageRequest(BaseModel):
     instruction: str = Field(description="Instruction or task to execute in this dialogue turn")
-    max_steps: int = Field(default=15, description="Max steps for this turn")
+    max_steps: int = Field(default=100, description="Max steps for this turn")
     async_execution: bool = Field(
         default=False, description="Whether to execute in background and return immediately"
     )
@@ -353,7 +353,7 @@ def create_app() -> FastAPI:
                 action = data.get("action")
                 if action == "message":
                     instruction = data.get("instruction", "")
-                    max_steps = int(data.get("max_steps", 15))
+                    max_steps = int(data.get("max_steps", 100))
                     # Run turn in background thread
                     threading.Thread(
                         target=session.execute_turn,
