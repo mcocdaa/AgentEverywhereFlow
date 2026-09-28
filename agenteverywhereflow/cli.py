@@ -30,6 +30,116 @@ def version() -> None:
     )
 
 
+@app.command(name="update")
+def update(
+    channel: str = typer.Option(
+        "main", "--channel", "-c", help="Target branch or tag to update to (default: main)"
+    ),
+    force: bool = typer.Option(
+        False, "--force", "-f", help="Force reinstall from the remote repository"
+    ),
+) -> None:
+    """Update AgentEverywhereFlow to the latest release or main branch."""
+    import shutil
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    console.print(
+        Panel(
+            f"[bold cyan]🔄 Updating AgentEverywhereFlow (Current: v{__version__})[/bold cyan]\n"
+            f"[dim]Checking environment and fetching latest version from '{channel}'...[/dim]",
+            title="AEFlow Self-Updater",
+            border_style="cyan",
+        )
+    )
+
+    # 1. Check if running in a local Git repository
+    repo_dir = Path(__file__).resolve().parent.parent
+    if (repo_dir / ".git").exists() and shutil.which("git"):
+        try:
+            console.print(
+                f"[bold yellow]Found local Git repository at {repo_dir}. Pulling from '{channel}'...[/bold yellow]"
+            )
+            res = subprocess.run(
+                ["git", "pull", "origin", channel],
+                cwd=repo_dir,
+                capture_output=True,
+                text=True,
+            )
+            if res.returncode == 0:
+                console.print(
+                    f"[bold green]✓ Successfully updated via Git pull:[/bold green]\n{res.stdout.strip()}"
+                )
+                return
+        except Exception as e:
+            console.print(f"[dim]Git pull fallback: {e}[/dim]")
+
+    # 2. Check if uv is available
+    uv_path = shutil.which("uv")
+    if uv_path:
+        console.print("[bold yellow]Attempting update via 'uv tool' ...[/bold yellow]")
+        cmd = (
+            [
+                uv_path,
+                "tool",
+                "install",
+                "--force",
+                f"git+https://github.com/mcocdaa/AgentEverywhereFlow.git@{channel}",
+            ]
+            if force
+            else [uv_path, "tool", "upgrade", "agenteverywhereflow"]
+        )
+        try:
+            res = subprocess.run(cmd, capture_output=True, text=True)
+            if res.returncode == 0:
+                msg = res.stdout.strip() or res.stderr.strip()
+                console.print(f"[bold green]✓ Update successful via uv tool![/bold green]\n{msg}")
+                return
+            else:
+                # If 'uv tool upgrade' failed, try explicit reinstall from git
+                fallback_cmd = [
+                    uv_path,
+                    "tool",
+                    "install",
+                    "--force",
+                    f"git+https://github.com/mcocdaa/AgentEverywhereFlow.git@{channel}",
+                ]
+                res_fb = subprocess.run(fallback_cmd, capture_output=True, text=True)
+                if res_fb.returncode == 0:
+                    msg = res_fb.stdout.strip() or res_fb.stderr.strip()
+                    console.print(
+                        f"[bold green]✓ Successfully reinstalled latest via uv tool![/bold green]\n{msg}"
+                    )
+                    return
+        except Exception as e:
+            console.print(f"[dim]uv tool error: {e}[/dim]")
+
+    # 3. Fallback to pip
+    try:
+        console.print("[bold yellow]Attempting update via pip ...[/bold yellow]")
+        pip_cmd = [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "--upgrade",
+            f"git+https://github.com/mcocdaa/AgentEverywhereFlow.git@{channel}",
+        ]
+        res_pip = subprocess.run(pip_cmd, capture_output=True, text=True)
+        if res_pip.returncode == 0:
+            console.print("[bold green]✓ Successfully updated via pip![/bold green]")
+            return
+        else:
+            console.print(f"[bold red]❌ Pip update failed: {res_pip.stderr.strip()}[/bold red]")
+    except Exception as e:
+        console.print(f"[bold red]❌ Update failed: {e}[/bold red]")
+
+
+# Register 'upgrade' as alias for 'update'
+app.command(name="upgrade")(update)
+
+
 @app.command(name="config")
 def manage_config(
     set_key: str | None = typer.Option(
