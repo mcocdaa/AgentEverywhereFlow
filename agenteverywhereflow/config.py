@@ -14,6 +14,13 @@ class ExecutionMode(StrEnum):
     CONTROL_GUARDED = "guarded"  # Granular function calls with permission gate
 
 
+class PermissionMode(StrEnum):
+    """Permission mode for agent action execution."""
+
+    AUTO = "auto"  # Full autonomy
+    MANUAL = "manual"  # Require manual operator approval before every action
+
+
 def get_global_config_dir() -> Path:
     """Resolve global ~/.aef directory."""
     return Path.home() / ".aef"
@@ -45,11 +52,19 @@ class AppConfig(BaseSettings):
     max_steps: int = Field(default=25, description="Maximum loop steps per task")
     step_timeout_seconds: float = Field(default=30.0, description="Timeout for each execution step")
 
-    # Safety settings
+    # Safety & Permission settings
+    default_permission_mode: PermissionMode = Field(
+        default=PermissionMode.AUTO,
+        description="Default permission mode: auto (full autonomy) or manual (human-in-the-loop approval)",
+    )
     require_human_confirmation: bool = Field(
         default=False,
         description="Require interactive confirmation for potentially destructive operations",
     )
+
+    # Server settings
+    server_host: str = Field(default="127.0.0.1", description="Default host for aef serve")
+    server_port: int = Field(default=8000, description="Default port for aef serve")
 
     # Diagnostic & Debug settings
     debug: bool = Field(

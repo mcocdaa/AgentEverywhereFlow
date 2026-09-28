@@ -190,13 +190,19 @@ aef run --target hwnd:0x409dc --task "帮我过一下人机验证"
 # 5. Summon agent onto an entire physical display
 aef run --target display:1 --task "Organize desktop icons"
 
-# 6. Run with step diagnostics and debug logging
+# 6. Multi-turn Interactive Dialogue Session (Continuous conversation + slash commands)
+aef chat --target "Chrome" --permission manual
+
+# 7. Launch REST & WebSocket Dialogue Service Daemon (Swagger: http://localhost:8000/docs)
+aef serve --host 127.0.0.1 --port 8000
+
+# 8. Run with step diagnostics and debug logging
 aef run --target "Excel" --task "Calculate total" --debug
 
-# 7. View current configuration
+# 9. View current configuration
 aef config
 
-# 8. Check system info & installed version
+# 10. Check system info & installed version
 aef version
 ```
 

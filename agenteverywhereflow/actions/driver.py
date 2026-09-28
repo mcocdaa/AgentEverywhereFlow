@@ -59,10 +59,11 @@ class InputDriver:
     def _get_x11_active_input_window(self, x_disp: Any, parent_win: Any) -> Any:
         """Find the innermost child window that currently has or can receive focus."""
         try:
-            tree = parent_win.query_tree()
-            if tree.children:
-                # Often the last child is the active/focused control
-                return tree.children[-1]
+            from Xlib import X
+
+            focus = x_disp.get_input_focus().focus
+            if focus and focus not in (X.NONE, X.PointerRoot, 0, 1):
+                return focus
         except Exception:
             pass
         return parent_win

@@ -5,7 +5,7 @@ from rich.console import Console
 from rich.panel import Panel
 
 from agenteverywhereflow import __version__
-from agenteverywhereflow.config import ExecutionMode
+from agenteverywhereflow.config import ExecutionMode, PermissionMode
 
 app = typer.Typer(
     name="aef",
@@ -219,6 +219,294 @@ def run(
 
     loop = AgentLoop()
     loop.run(target=selected, user_task=task, mode=mode)
+
+
+@app.command(name="chat")
+def chat(
+    target_query: str | None = typer.Option(
+        None,
+        "--target",
+        "-t",
+        help="Target ID, native handle, table index, or process/title substring. If omitted, opens interactive picker.",
+    ),
+    mode: ExecutionMode = typer.Option(
+        ExecutionMode.MINIMAL_PYTHON,
+        "--mode",
+        "-m",
+        help="Execution mode (minimal: Python REPL / guarded: atomic JSON)",
+    ),
+    permission: PermissionMode = typer.Option(
+        PermissionMode.AUTO,
+        "--permission",
+        "-p",
+        help="Permission mode: 'auto' (fully autonomous) or 'manual' (operator approval required before every action)",
+    ),
+    debug: bool = typer.Option(
+        False, "--debug", "-d", help="Enable verbose debug logging and diagnostics"
+    ),
+) -> None:
+    """Launch an interactive multi-turn dialogue session with the agent bound to a window or display."""
+    from rich.markup import escape
+
+    from agenteverywhereflow.capturer import get_capturer
+    from agenteverywhereflow.capturer.selector import TargetSelector, resolve_target
+    from agenteverywhereflow.config import config
+    from agenteverywhereflow.session import ChatSession, SessionEvent, SessionEventType
+
+    if debug:
+        config.debug = True
+
+    capturer = get_capturer()
+    all_targets = capturer.list_targets()
+
+    # Resolve target
+    selected = None
+    if target_query:
+        selected = resolve_target(all_targets, target_query)
+        if not selected:
+            console.print(
+                f"[bold red]❌ No target found matching query: '{target_query}'[/bold red]"
+            )
+            console.print(
+                "[dim]Run 'aef list-targets' to view all available Target IDs and indices.[/dim]"
+            )
+            raise typer.Exit(1)
+    else:
+        selector = TargetSelector()
+        selected = selector.interactive_select()
+        if not selected:
+            console.print("[yellow]Dialogue session cancelled.[/yellow]")
+            raise typer.Exit(0)
+
+    # Initialize conversational session
+    session = ChatSession(target=selected, mode=mode, permission_mode=permission)
+
+    # Attach live Rich terminal event listener
+    def on_session_event(event: SessionEvent) -> None:
+        if event.event_type == SessionEventType.REASONING:
+            content = event.payload.get("content", "")
+            if content.strip():
+                console.print(Panel(content, title="🤖 Agent Reasoning", style="cyan"))
+        elif event.event_type == SessionEventType.ACTION_PROPOSED:
+            action_type = event.payload.get("type", "")
+            if action_type == "codeact":
+                code = event.payload.get("code", "")
+                console.print(
+                    Panel(
+                        code,
+                        title=f"⚡ Executing CodeAct Block (Step {event.step})",
+                        border_style="yellow",
+                    )
+                )
+            elif action_type == "guarded":
+                import json
+
+                payload_data = event.payload.get("payload", {})
+                console.print(
+                    Panel(
+                        json.dumps(payload_data, indent=2, ensure_ascii=False),
+                        title=f"⚡ Executing Guarded Action (Step {event.step})",
+                        border_style="yellow",
+                    )
+                )
+        elif event.event_type == SessionEventType.ACTION_EXECUTED:
+            if event.payload.get("rejected"):
+                reason = event.payload.get("reason", "Operator rejected")
+                console.print(
+                    f"  [bold yellow]⛔ Action Rejected by Operator:[/bold yellow] {reason}"
+                )
+            else:
+                success = event.payload.get("success", False)
+                out = event.payload.get("output", "")
+                err = event.payload.get("error", "")
+                if success:
+                    console.print("  [bold green]✅ Actions Executed Successfully[/bold green]")
+                else:
+                    console.print(f"  [bold red]❌ Execution Failed:[/bold red] {err}")
+                if out and out.strip():
+                    console.print(f"  [dim]Output: {escape(out.strip())}[/dim]")
+        elif event.event_type == SessionEventType.TASK_COMPLETED:
+            summary = event.payload.get("summary", "Task completed.")
+            console.print(
+                Panel(
+                    f"[bold green]{summary}[/bold green]",
+                    title="🎉 Instruction Completed",
+                    border_style="bold green",
+                )
+            )
+        elif event.event_type == SessionEventType.ERROR:
+            err = event.payload.get("error", "Unknown error")
+            console.print(
+                Panel(f"[bold red]{err}[/bold red]", title="❌ Session Error", border_style="red")
+            )
+
+    session.add_listener(on_session_event)
+
+    # Print session welcome banner
+    console.print(
+        Panel(
+            f"[bold cyan]🎯 Target:[/bold cyan] {selected.title} [dim]({selected.rect.width}x{selected.rect.height})[/dim]\n"
+            f"[bold cyan]🆔 Target ID:[/bold cyan] {selected.target_id}\n"
+            f"[bold cyan]🛡️ Permission:[/bold cyan] [bold magenta]{session.permission_gate.mode.value.upper()}[/bold magenta] [dim](Use /perm to toggle manual approval)[/dim]\n"
+            f"[bold cyan]⚙️ Mode:[/bold cyan] {mode.value.upper()}\n\n"
+            f"[dim]Type your instructions to drive the target, or use slash commands:[/dim]\n"
+            f"[dim]  /help           - View commands guide[/dim]\n"
+            f"[dim]  /perm [mode]    - Switch between 'auto' and 'manual'[/dim]\n"
+            f"[dim]  /target [query] - Switch to another window or screen[/dim]\n"
+            f"[dim]  /clear          - Reset conversation memory[/dim]\n"
+            f"[dim]  /status         - Show session state and diagnostics[/dim]\n"
+            f"[dim]  /exit           - Exit session[/dim]",
+            title="💬 AgentEverywhereFlow Dialogue Mode",
+            border_style="bold blue",
+        )
+    )
+
+    # Interactive REPL loop
+    while True:
+        try:
+            target_label = selected.title[:12] if selected.title else selected.target_id
+            user_input = console.input(f"[bold green]aef [{target_label}] ❯ [/bold green]").strip()
+        except (KeyboardInterrupt, EOFError):
+            console.print("\n[yellow]Dialogue session closed.[/yellow]")
+            break
+
+        if not user_input:
+            continue
+
+        if user_input.startswith("/"):
+            parts = user_input.split(maxsplit=1)
+            cmd = parts[0].lower()
+            arg = parts[1].strip() if len(parts) > 1 else ""
+
+            if cmd in ("/exit", "/quit", "/q"):
+                console.print("[yellow]Dialogue session ended. Bye![/yellow]")
+                break
+
+            elif cmd == "/help":
+                console.print(
+                    Panel(
+                        "[bold cyan]/help[/bold cyan]                - Display this help message\n"
+                        "[bold cyan]/perm [auto|manual][/bold cyan] - Toggle or display permission level\n"
+                        "[bold cyan]/target <query>[/bold cyan]     - Switch target window/screen\n"
+                        "[bold cyan]/status[/bold cyan]              - Show session stats and viewport info\n"
+                        "[bold cyan]/clear[/bold cyan]               - Clear multi-turn history while keeping target\n"
+                        "[bold cyan]/exit[/bold cyan]                - Exit dialogue session",
+                        title="💡 Available Slash Commands",
+                        border_style="cyan",
+                    )
+                )
+
+            elif cmd == "/perm":
+                if arg:
+                    try:
+                        new_mode = PermissionMode(arg.lower())
+                        session.set_permission_mode(new_mode)
+                        console.print(
+                            f"[bold green]✓ Permission mode updated to: {new_mode.value.upper()}[/bold green]"
+                        )
+                    except ValueError:
+                        console.print(
+                            f"[bold red]Invalid mode: '{arg}'. Choose 'auto' or 'manual'.[/bold red]"
+                        )
+                else:
+                    console.print(
+                        f"Current permission mode: [bold magenta]{session.permission_gate.mode.value.upper()}[/bold magenta]"
+                    )
+
+            elif cmd == "/target":
+                if arg:
+                    new_t = resolve_target(capturer.list_targets(), arg)
+                    if new_t:
+                        session.switch_target(new_t)
+                        selected = new_t
+                        console.print(
+                            f"[bold green]✓ Active target switched to: {new_t.title} ({new_t.target_id})[/bold green]"
+                        )
+                    else:
+                        console.print(
+                            f"[bold red]❌ Target query '{arg}' could not be resolved.[/bold red]"
+                        )
+                else:
+                    new_t = TargetSelector().interactive_select()
+                    if new_t:
+                        session.switch_target(new_t)
+                        selected = new_t
+                        console.print(
+                            f"[bold green]✓ Active target switched to: {new_t.title} ({new_t.target_id})[/bold green]"
+                        )
+
+            elif cmd in ("/clear", "/reset"):
+                session.reset_history()
+                console.print(
+                    "[bold green]✓ Conversational history and visual memory reset.[/bold green]"
+                )
+
+            elif cmd == "/status":
+                console.print(
+                    Panel(
+                        f"[bold]Session ID:[/bold] {session.session_id}\n"
+                        f"[bold]Target:[/bold] {session.target.title} ({session.target.target_id})\n"
+                        f"[bold]Resolution:[/bold] {session.target.rect.width}x{session.target.rect.height} at ({session.target.rect.x}, {session.target.rect.y})\n"
+                        f"[bold]Process:[/bold] {session.target.process_name or 'N/A'}\n"
+                        f"[bold]Turns Completed:[/bold] {session.turn_count} | [bold]Total Steps:[/bold] {session.total_steps}\n"
+                        f"[bold]Permission:[/bold] {session.permission_gate.mode.value.upper()}\n"
+                        f"[bold]Execution Mode:[/bold] {session.mode.value.upper()}\n"
+                        f"[bold]State:[/bold] {session.state.value.upper()}",
+                        title="📊 Session Diagnostics",
+                        border_style="cyan",
+                    )
+                )
+
+            else:
+                console.print(
+                    f"[yellow]Unknown command '{cmd}'. Type /help for assistance.[/yellow]"
+                )
+            continue
+
+        # Regular user instruction: execute turn
+        console.rule(f"[bold blue]Turn {session.turn_count + 1}[/bold blue]")
+        turn_res = session.execute_turn(user_input)
+        if not turn_res.success and turn_res.error:
+            console.print(f"[bold red]Turn failed: {turn_res.error}[/bold red]")
+
+
+@app.command(name="serve")
+def serve(
+    host: str = typer.Option(
+        None, "--host", "-h", help="Bind host address (default: 127.0.0.1 or from config)"
+    ),
+    port: int = typer.Option(
+        None, "--port", "-p", help="Bind port number (default: 8000 or from config)"
+    ),
+    reload: bool = typer.Option(False, "--reload", "-r", help="Enable auto-reload for development"),
+) -> None:
+    """Launch the AgentEverywhereFlow REST & WebSocket dialogue service daemon."""
+    import uvicorn
+
+    from agenteverywhereflow.config import config
+
+    bind_host = host or config.server_host
+    bind_port = port or config.server_port
+
+    console.print(
+        Panel(
+            f"[bold green]🚀 AgentEverywhereFlow Dialogue Service Daemon[/bold green]\n\n"
+            f"[bold cyan]🌐 Server Endpoint:[/bold cyan] http://{bind_host}:{bind_port}\n"
+            f"[bold cyan]📖 Swagger Docs:[/bold cyan]    http://{bind_host}:{bind_port}/docs\n"
+            f"[bold cyan]🔌 REST Base:[/bold cyan]       http://{bind_host}:{bind_port}/api/v1\n"
+            f"[bold cyan]⚡ WebSocket:[/bold cyan]       ws://{bind_host}:{bind_port}/api/v1/sessions/{{id}}/ws",
+            title="🌐 AEFlow Daemon Online",
+            border_style="green",
+        )
+    )
+
+    uvicorn.run(
+        "agenteverywhereflow.server.app:create_app",
+        host=bind_host,
+        port=bind_port,
+        factory=True,
+        reload=reload,
+    )
 
 
 def main() -> None:

@@ -189,13 +189,19 @@ aef run --target hwnd:0x409dc --task "帮我过一下人机验证"
 # 5. 直接投屏整个物理显示器
 aef run --target display:1 --task "整理桌面图标并排列窗口"
 
-# 6. 开启 Debug 诊断模式运行（打印实时 Token 消耗、状态诊断与逐步截图）
+# 6. 多轮交互式对话模式（保持会话记忆，支持 /perm 动态审批切换与 /target 热换窗口）
+aef chat --target "Chrome" --permission manual
+
+# 7. 启动后台对话服务守护进程（提供 REST API + 实时双向 WebSocket，内置 Swagger: http://localhost:8000/docs）
+aef serve --host 127.0.0.1 --port 8000
+
+# 8. 开启 Debug 诊断模式运行（打印实时 Token 消耗、状态诊断与逐步截图）
 aef run --target "Excel" --task "计算总金额" --debug
 
-# 7. 查看当前生效的完整配置
+# 9. 查看当前生效的完整配置
 aef config
 
-# 8. 查看系统信息与已安装版本
+# 10. 查看系统信息与已安装版本
 aef version
 ```
 
