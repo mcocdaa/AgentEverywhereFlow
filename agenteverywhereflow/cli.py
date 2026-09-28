@@ -547,6 +547,7 @@ def chat(
             f"[dim]Type your instructions to drive the target, or use slash commands:[/dim]\n"
             f"[dim]  /help           - View commands guide[/dim]\n"
             f"[dim]  /resume [id]    - Resume a saved session or list available sessions[/dim]\n"
+            f"[dim]  /steps [n]      - View or adjust max steps per turn[/dim]\n"
             f"[dim]  /perm [mode]    - Switch between 'auto' and 'manual'[/dim]\n"
             f"[dim]  /target [query] - Switch to another window or screen[/dim]\n"
             f"[dim]  /clear          - Reset conversation memory[/dim]\n"
@@ -583,6 +584,7 @@ def chat(
                     Panel(
                         "[bold cyan]/help[/bold cyan]                - Display this help message\n"
                         "[bold cyan]/resume [id|latest][/bold cyan] - Resume a saved session or list available\n"
+                        "[bold cyan]/steps [number][/bold cyan]     - View or adjust max step budget per turn\n"
                         "[bold cyan]/perm [auto|manual][/bold cyan] - Toggle or display permission level\n"
                         "[bold cyan]/target <query>[/bold cyan]     - Switch target window/screen\n"
                         "[bold cyan]/status[/bold cyan]              - Show session stats and viewport info\n"
@@ -730,6 +732,7 @@ def chat(
                 )
 
             elif cmd == "/status":
+                curr_steps = max_steps or config.max_steps
                 console.print(
                     Panel(
                         f"[bold]Session ID:[/bold] {session.session_id}\n"
@@ -737,6 +740,7 @@ def chat(
                         f"[bold]Resolution:[/bold] {session.target.rect.width}x{session.target.rect.height} at ({session.target.rect.x}, {session.target.rect.y})\n"
                         f"[bold]Process:[/bold] {session.target.process_name or 'N/A'}\n"
                         f"[bold]Turns Completed:[/bold] {session.turn_count} | [bold]Total Steps:[/bold] {session.total_steps}\n"
+                        f"[bold]Step Budget per Turn:[/bold] {curr_steps} steps [dim](Change with /steps <n>)[/dim]\n"
                         f"[bold]Permission:[/bold] {session.permission_gate.mode.value.upper()}\n"
                         f"[bold]Execution Mode:[/bold] {session.mode.value.upper()}\n"
                         f"[bold]KV Cache Hit Rate:[/bold] [bold green]{session.token_usage.cache_hit_rate}%[/bold green] ({session.token_usage.cached_prompt_tokens} / {session.token_usage.prompt_tokens} cached prompt tokens)\n"
@@ -747,6 +751,26 @@ def chat(
                         border_style="cyan",
                     )
                 )
+
+            elif cmd in ("/steps", "/step"):
+                if arg:
+                    try:
+                        new_steps = int(arg)
+                        if new_steps <= 0:
+                            raise ValueError
+                        max_steps = new_steps
+                        console.print(
+                            f"[bold green]✓ Step budget per turn set to {max_steps} steps.[/bold green]"
+                        )
+                    except ValueError:
+                        console.print(
+                            "[bold red]❌ Invalid step count. Usage: /steps <positive_integer>[/bold red]"
+                        )
+                else:
+                    curr_steps = max_steps or config.max_steps
+                    console.print(
+                        f"[bold cyan]Current step limit per turn:[/bold cyan] {curr_steps} steps [dim](Change with: /steps <number>)[/dim]"
+                    )
 
             else:
                 console.print(
