@@ -181,3 +181,31 @@ def test_session_manager_registry() -> None:
     assert closed is True
     assert mgr.get_session("test-1") is None
     assert len(mgr.list_sessions()) == 0
+
+
+def test_session_manager_restore_and_latest() -> None:
+    """Verify SessionManager restore_session and get_latest_session."""
+    mgr = SessionManager()
+    t = _make_dummy_target("Notepad Test")
+
+    s = mgr.create_session(t, session_id="test-restore-01")
+    s.turn_count = 3
+    s.total_steps = 5
+    s.save()
+
+    # Clear in-memory
+    mgr.clear()
+    assert mgr.get_session("test-restore-01") is None
+
+    # Restore from disk
+    restored = mgr.restore_session("test-restore-01")
+    assert restored is not None
+    assert restored.session_id == "test-restore-01"
+    assert restored.target.title == "Notepad Test"
+    assert restored.turn_count == 3
+    assert restored.total_steps == 5
+
+    # Get latest
+    latest = mgr.get_latest_session()
+    assert latest is not None
+    assert latest.session_id == "test-restore-01"

@@ -134,7 +134,13 @@ class GuardedActionEngine(BaseExecutionEngine):
                     f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]scroll[/bold cyan](amount={amount}{pos_info})"
                 )
                 if gx is not None and gy is not None:
-                    sx, sy = CoordinateProjector.to_screen_coords(target, float(gx), float(gy))
+                    sx, sy = CoordinateProjector.to_screen_coords(
+                        target,
+                        float(gx),
+                        float(gy),
+                        img_width=target.rect.width,
+                        img_height=target.rect.height,
+                    )
                     driver.scroll(amount, x=sx, y=sy)
                 else:
                     driver.scroll(amount)

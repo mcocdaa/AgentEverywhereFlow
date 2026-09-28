@@ -540,6 +540,7 @@ def chat(
             f"[bold cyan]⚙️ Mode:[/bold cyan] {mode.value.upper()}\n\n"
             f"[dim]Type your instructions to drive the target, or use slash commands:[/dim]\n"
             f"[dim]  /help           - View commands guide[/dim]\n"
+            f"[dim]  /resume [id]    - Resume a saved session or list available sessions[/dim]\n"
             f"[dim]  /perm [mode]    - Switch between 'auto' and 'manual'[/dim]\n"
             f"[dim]  /target [query] - Switch to another window or screen[/dim]\n"
             f"[dim]  /clear          - Reset conversation memory[/dim]\n"
@@ -575,6 +576,7 @@ def chat(
                 console.print(
                     Panel(
                         "[bold cyan]/help[/bold cyan]                - Display this help message\n"
+                        "[bold cyan]/resume [id|latest][/bold cyan] - Resume a saved session or list available\n"
                         "[bold cyan]/perm [auto|manual][/bold cyan] - Toggle or display permission level\n"
                         "[bold cyan]/target <query>[/bold cyan]     - Switch target window/screen\n"
                         "[bold cyan]/status[/bold cyan]              - Show session stats and viewport info\n"
@@ -582,6 +584,97 @@ def chat(
                         "[bold cyan]/exit[/bold cyan]                - Exit dialogue session",
                         title="💡 Available Slash Commands",
                         border_style="cyan",
+                    )
+                )
+
+            elif cmd == "/resume":
+                import datetime
+
+                from rich.table import Table
+
+                from agenteverywhereflow.session import session_storage
+
+                if not arg:
+                    sessions = session_storage.list_sessions()
+                    if not sessions:
+                        console.print("[dim]No saved sessions found in ~/.aef/sessions/[/dim]")
+                    else:
+                        table = Table(title="📁 Available Sessions to Resume")
+                        table.add_column("Session ID", style="bold cyan")
+                        table.add_column("Target Title", style="green")
+                        table.add_column("Turns", justify="right")
+                        table.add_column("Steps", justify="right")
+                        table.add_column("KV Cache Hit", style="magenta", justify="right")
+                        table.add_column("Last Updated", style="dim")
+
+                        for s in sessions[:8]:
+                            upd = datetime.datetime.fromtimestamp(s.updated_at).strftime(
+                                "%Y-%m-%d %H:%M"
+                            )
+                            hit_str = (
+                                f"{s.token_usage.cache_hit_rate}%"
+                                if s.token_usage.prompt_tokens > 0
+                                else "N/A"
+                            )
+                            table.add_row(
+                                s.session_id,
+                                s.target_title[:24],
+                                str(s.turn_count),
+                                str(s.total_steps),
+                                hit_str,
+                                upd,
+                            )
+                        console.print(table)
+                        console.print(
+                            "[dim]Usage: [bold cyan]/resume latest[/bold cyan] or [bold cyan]/resume <session_id>[/bold cyan][/dim]"
+                        )
+                    continue
+
+                target_sess_id = arg.strip()
+                resumed_sess: ChatSession | None = None
+                if target_sess_id.lower() in ("latest", "last"):
+                    resumed_sess = session_manager.get_latest_session()
+                else:
+                    resumed_sess = session_manager.get_session(
+                        target_sess_id
+                    ) or session_manager.restore_session(target_sess_id)
+                    if not resumed_sess:
+                        # Prefix match
+                        all_saved = session_storage.list_sessions()
+                        for s_meta in all_saved:
+                            if s_meta.session_id.startswith(target_sess_id):
+                                resumed_sess = session_manager.restore_session(s_meta.session_id)
+                                break
+
+                if not resumed_sess:
+                    console.print(
+                        f"[bold red]❌ Saved session '{target_sess_id}' not found.[/bold red]"
+                    )
+                    continue
+
+                if resumed_sess.session_id == session.session_id:
+                    console.print(
+                        f"[yellow]Already interacting with session '{session.session_id}'.[/yellow]"
+                    )
+                    continue
+
+                # Auto-save current session before switching
+                session.save()
+                session.remove_listener(on_session_event)
+
+                session = resumed_sess
+                selected = session.target
+                session.add_listener(on_session_event)
+                session.capturer.focus(selected)
+
+                console.print(
+                    Panel(
+                        f"[bold green]✓ Successfully switched to session '{session.session_id}'![/bold green]\n"
+                        f"[bold cyan]🎯 Target:[/bold cyan] {selected.title} ({selected.rect.width}x{selected.rect.height})\n"
+                        f"[bold cyan]📊 Memory:[/bold cyan] Turns={session.turn_count}, Steps={session.total_steps}, "
+                        f"KV Cache Hit Rate=[bold green]{session.token_usage.cache_hit_rate}%[/bold green]",
+                        title="🔄 Session Resumed",
+                        border_style="green",
                     )
                 )
 
