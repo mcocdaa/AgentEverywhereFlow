@@ -119,13 +119,22 @@ def update(
                 cwd=repo_dir,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
             )
             git_cmd = (
                 ["git", "pull", "origin", "main"]
                 if target_ref == "main"
                 else ["git", "checkout", target_ref]
             )
-            res = subprocess.run(git_cmd, cwd=repo_dir, capture_output=True, text=True)
+            res = subprocess.run(
+                git_cmd,
+                cwd=repo_dir,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
             if res.returncode == 0:
                 console.print(
                     f"[bold green]✓ Successfully updated local Git repository to {target_ref}![/bold green]"
@@ -139,21 +148,38 @@ def update(
     if uv_path:
         console.print(f"[bold yellow]Updating via 'uv tool' to {target_ref} ...[/bold yellow]")
         install_target = f"git+https://github.com/mcocdaa/AgentEverywhereFlow.git@{target_ref}"
-        cmd = [uv_path, "tool", "install", "--force", install_target]
+        cmd = [uv_path, "tool", "install", "--force", "--reinstall", install_target]
         try:
-            res = subprocess.run(cmd, capture_output=True, text=True)
+            res = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
             if res.returncode == 0:
                 msg = res.stdout.strip() or res.stderr.strip()
                 console.print(
                     f"[bold green]✓ Successfully updated to {target_ref} via uv tool![/bold green]\n{msg}"
                 )
                 return
+            else:
+                err_msg = res.stderr.strip() or res.stdout.strip()
+                console.print(f"[yellow]⚠️ uv tool install failed: {err_msg}[/yellow]")
         except Exception as e:
             console.print(f"[dim]uv tool error: {e}[/dim]")
 
     # 3. Fallback to pip
-    try:
-        console.print(f"[bold yellow]Updating via pip to {target_ref} ...[/bold yellow]")
+    pip_exe = shutil.which("pip") or shutil.which("pip3")
+    pip_cmd: list[str]
+    if pip_exe:
+        pip_cmd = [
+            pip_exe,
+            "install",
+            "--upgrade",
+            f"git+https://github.com/mcocdaa/AgentEverywhereFlow.git@{target_ref}",
+        ]
+    else:
         pip_cmd = [
             sys.executable,
             "-m",
@@ -162,7 +188,16 @@ def update(
             "--upgrade",
             f"git+https://github.com/mcocdaa/AgentEverywhereFlow.git@{target_ref}",
         ]
-        res_pip = subprocess.run(pip_cmd, capture_output=True, text=True)
+
+    try:
+        console.print(f"[bold yellow]Updating via pip to {target_ref} ...[/bold yellow]")
+        res_pip = subprocess.run(
+            pip_cmd,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
         if res_pip.returncode == 0:
             console.print(
                 f"[bold green]✓ Successfully updated to {target_ref} via pip![/bold green]"
