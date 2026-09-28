@@ -94,10 +94,8 @@ class ChatSession:
             "\nInteractive Dialogue Mode Active:\n"
             "- You are participating in a multi-turn conversation with the operator.\n"
             "- Focus solely on executing the user's latest instruction.\n"
-            "- When you finish the current user instruction, conclude with 'TASK_COMPLETED: <summary>' "
-            "so the operator can inspect the viewport and provide follow-up commands.\n"
-            "- Observation & Answer Retrieval: If the user asks you to retrieve or report information (e.g. '告诉我回答', '查看结果'), "
-            "do NOT conclude with TASK_COMPLETED until you have actually observed the reply in the screenshot and extracted the answer.\n"
+            "- TASK_COMPLETED is the terminal signal: emit 'TASK_COMPLETED: <summary_or_answer>' ONLY when the entire user instruction has been 100% fulfilled.\n"
+            "- Never emit TASK_COMPLETED during intermediate action steps or if you still need to observe the UI response.\n"
         )
         sys_content = base_prompt + dialogue_instruction
         if not self.messages:

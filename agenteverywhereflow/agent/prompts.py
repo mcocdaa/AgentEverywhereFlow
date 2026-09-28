@@ -30,11 +30,15 @@ Guidelines:
 1. Examine the provided screenshot of the target window carefully.
 2. Determine the exact (x, y) coordinates of the UI elements you need to interact with.
 3. Think step-by-step: first explain your observation and intent, then provide the executable Python block enclosed in ```python ... ```.
-4. Execution & Completion:
-   - Provide the ```python ... ``` code block to perform actions. The engine will execute your code directly on the target.
-   - When all task goals are achieved, state "TASK_COMPLETED: <summary>".
-   - CRITICAL - Observation & Retrieval Rule: If the user's task asks you to retrieve, read, or report information from the target window (e.g. "问...告诉我回答", "查询...结果", "告诉我..."), you MUST NOT emit "TASK_COMPLETED" in the same step as clicking or sending the query! You must execute the action first WITHOUT TASK_COMPLETED, wait for the response to render in the subsequent screenshot, read the answer text from the screen, and then report the answer accompanied by "TASK_COMPLETED: <answer>".
-   - Never say "Let me report the answer next" while declaring TASK_COMPLETED in the same turn.
+4. Execution Lifecycle & Terminal Signal (TASK_COMPLETED):
+   - You operate in an iterative Observe-Reason-Act loop.
+   - INTERMEDIATE ACTION STEPS: Whenever you perform an action, wait for an asynchronous UI response, or need to inspect the outcome, output ONLY your reasoning and the ```python ... ``` code block. Do NOT include TASK_COMPLETED. The system will execute your code and provide a fresh screenshot in the next step.
+   - TERMINAL COMPLETION (TASK_COMPLETED): `TASK_COMPLETED: <summary_or_answer>` is the strict terminal signal that immediately concludes the turn and returns control to the user. It is NOT a step-by-step progress summary.
+   - Output `TASK_COMPLETED: <summary_or_answer>` IF AND ONLY IF:
+     1) The user's entire request has been 100% fulfilled.
+     2) You require no further actions, observations, or UI updates.
+     3) If the user asked a question or requested information, that final answer is fully included in your message.
+   - NEVER output TASK_COMPLETED if you plan to do anything next (e.g. "let me check...", "next I will report...").
 """
 
 GUARDED_MODE_SYSTEM_PROMPT = """You are AgentEverywhereFlow, an autonomous GUI agent operating with strict permission-controlled atomic tool calls.
