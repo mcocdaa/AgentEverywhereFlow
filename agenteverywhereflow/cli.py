@@ -7,10 +7,13 @@ from rich.panel import Panel
 from agenteverywhereflow import __version__
 from agenteverywhereflow.config import ExecutionMode, PermissionMode
 
+CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"]}
+
 app = typer.Typer(
     name="aef",
     help="AgentEverywhereFlow: Summon an autonomous GUI agent on any screen or window.",
     add_completion=False,
+    context_settings=CONTEXT_SETTINGS,
 )
 console = Console()
 
@@ -514,7 +517,7 @@ def chat(
 @app.command(name="serve")
 def serve(
     host: str = typer.Option(
-        None, "--host", "-h", help="Bind host address (default: 127.0.0.1 or from config)"
+        None, "--host", "-H", help="Bind host address (default: 127.0.0.1 or from config)"
     ),
     port: int = typer.Option(
         None, "--port", "-p", help="Bind port number (default: 8000 or from config)"
@@ -554,6 +557,7 @@ session_app = typer.Typer(
     name="session",
     help="Manage persistent dialogue sessions, trajectory history, and audit exports.",
     add_completion=False,
+    context_settings=CONTEXT_SETTINGS,
 )
 app.add_typer(session_app, name="session")
 

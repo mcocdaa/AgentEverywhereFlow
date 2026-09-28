@@ -3,6 +3,29 @@
 所有关于 **AgentEverywhereFlow (AEFlow)** 的重要变动都将记录在此文件中。  
 本项目遵循 [Semantic Versioning (语义化版本 2.0.0)](https://semver.org/lang/zh-CN/) 与 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/) 规范。
 
+## [0.1.4] - 2026-09-28
+
+### 新增与核心特性 (Added & Core Features)
+- **多轮交互式对话引擎 (`aef chat`)**：
+  - 引入有状态对话引擎 `ChatSession`，支持持续追加指令、视口聚焦与因果历史连续推理。
+  - 支持会话级内置命令：`/status`（实时诊断）、`/clear`（重置会话）、`/exit`（安全退出）。
+  - 支持会话中途动态切换操作视口 (`switch_target`)。
+- **KV Cache 前缀不变性优化 (Prefix Caching & Invariance)**：
+  - 引入 `freeze_completed_turn` 机制：在每个轮次完成时，自动将历史轮次中的临时视口截图固化为不可变纯文本标记，确保多轮 Prompt 的 Byte 级前缀完全一致。
+  - 实测兼容 DeepSeek（64-token block 缓存）、OpenAI Prompt Caching 与 vLLM / SGLang Prefix Caching，使历史对话 KV Cache 命中率稳定提升至 80%~90%+。
+  - 实时解析并汇总 `prompt_cache_hit_tokens` 与 `cached_tokens`，透明展示 Token 节省指标。
+- **工业级 Session 持久化与断点续跑 (`aef session`)**：
+  - 磁盘会话存储分层（`~/.aef/sessions/<session_id>/`），分别落盘 `meta.json` 与纯净因果轨迹 `messages.json`（自动脱敏多兆 Base64 截图，极速轻量）。
+  - 支持断点续跑：`aef chat --resume <session_id>` 与 `aef chat --resume latest`。
+  - 提供完整 Session 管理 CLI：`aef session list`、`aef session show`、`aef session delete` 与 `aef session export`（导出企业审计 JSON）。
+- **双模态权限安全管控门禁 (PermissionGate)**：
+  - 支持 `AUTO`（全自动）与 `MANUAL`（人工审批模式），在操作前拦截关键键鼠事件并在终端弹出确认提示，支持驳回理由反馈注入模型思考上下文。
+- **常驻后台对话服务 (`aef serve`)**：
+  - 基于 FastAPI 与 WebSocket 架构的高性能 Daemon 服务，提供 REST API（`/api/v1/sessions`）与双向实时事件流推送。
+- **CLI 快捷帮助参数与跨平台依赖增强**：
+  - 全局支持 `-h` 作为 `--help` 简写别名（如 `aef -h`, `aef run -h`, `aef chat -h`, `aef session -h`）。
+  - 在 `pyproject.toml` 中配置标准 PEP 508 平台标记（Windows 自动拉取 `pywin32>=306`，Linux 自动拉取 `python-xlib>=0.33`），开箱即用零报错。
+
 ---
 
 ## [0.1.3] - 2026-09-24
