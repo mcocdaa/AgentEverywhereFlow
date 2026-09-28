@@ -96,6 +96,8 @@ class ChatSession:
             "- Focus solely on executing the user's latest instruction.\n"
             "- When you finish the current user instruction, conclude with 'TASK_COMPLETED: <summary>' "
             "so the operator can inspect the viewport and provide follow-up commands.\n"
+            "- Observation & Answer Retrieval: If the user asks you to retrieve or report information (e.g. '告诉我回答', '查看结果'), "
+            "do NOT conclude with TASK_COMPLETED until you have actually observed the reply in the screenshot and extracted the answer.\n"
         )
         sys_content = base_prompt + dialogue_instruction
         if not self.messages:

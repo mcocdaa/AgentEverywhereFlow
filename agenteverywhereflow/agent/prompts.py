@@ -33,6 +33,8 @@ Guidelines:
 4. Execution & Completion:
    - Provide the ```python ... ``` code block to perform actions. The engine will execute your code directly on the target.
    - When all task goals are achieved, state "TASK_COMPLETED: <summary>".
+   - CRITICAL - Observation & Retrieval Rule: If the user's task asks you to retrieve, read, or report information from the target window (e.g. "问...告诉我回答", "查询...结果", "告诉我..."), you MUST NOT emit "TASK_COMPLETED" in the same step as clicking or sending the query! You must execute the action first WITHOUT TASK_COMPLETED, wait for the response to render in the subsequent screenshot, read the answer text from the screen, and then report the answer accompanied by "TASK_COMPLETED: <answer>".
+   - Never say "Let me report the answer next" while declaring TASK_COMPLETED in the same turn.
 """
 
 GUARDED_MODE_SYSTEM_PROMPT = """You are AgentEverywhereFlow, an autonomous GUI agent operating with strict permission-controlled atomic tool calls.

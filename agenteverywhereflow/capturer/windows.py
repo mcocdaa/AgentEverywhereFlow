@@ -298,6 +298,33 @@ class WindowsCapturer(BaseCapturer):
                     win32gui.BringWindowToTop(hwnd)
                     win32gui.SetForegroundWindow(hwnd)
 
+                    # 3. Z-order topmost elevation trick to pierce through other topmost windows
+                    try:
+                        ex_style = win32gui.GetWindowLong(hwnd, win32con.GWL_EXSTYLE)
+                        is_topmost = bool(ex_style & win32con.WS_EX_TOPMOST)
+
+                        win32gui.SetWindowPos(
+                            hwnd,
+                            win32con.HWND_TOPMOST,
+                            0,
+                            0,
+                            0,
+                            0,
+                            win32con.SWP_NOMOVE | win32con.SWP_NOSIZE | win32con.SWP_SHOWWINDOW,
+                        )
+                        if not is_topmost:
+                            win32gui.SetWindowPos(
+                                hwnd,
+                                win32con.HWND_NOTOPMOST,
+                                0,
+                                0,
+                                0,
+                                0,
+                                win32con.SWP_NOMOVE | win32con.SWP_NOSIZE | win32con.SWP_SHOWWINDOW,
+                            )
+                    except Exception:
+                        pass
+
                     if fore_thread and fore_thread != cur_thread:
                         win32process.AttachThreadInput(cur_thread, fore_thread, False)
                     if target_thread and target_thread != cur_thread:
