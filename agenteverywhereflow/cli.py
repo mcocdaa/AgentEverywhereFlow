@@ -30,105 +30,143 @@ def version() -> None:
     )
 
 
+def _resolve_latest_release_tag() -> str | None:
+    """Query GitHub releases API for the latest stable release tag."""
+    try:
+        import httpx
+
+        url = "https://api.github.com/repos/mcocdaa/AgentEverywhereFlow/releases/latest"
+        resp = httpx.get(url, timeout=3.0, headers={"User-Agent": "AEFlow-Updater"})
+        if resp.status_code == 200:
+            tag = resp.json().get("tag_name")
+            if tag:
+                return str(tag)
+        # Fallback to tags endpoint if release hasn't been drafted
+        url_tags = "https://api.github.com/repos/mcocdaa/AgentEverywhereFlow/tags"
+        resp_tags = httpx.get(url_tags, timeout=3.0, headers={"User-Agent": "AEFlow-Updater"})
+        if resp_tags.status_code == 200 and resp_tags.json():
+            return str(resp_tags.json()[0].get("name"))
+    except Exception:
+        pass
+    return None
+
+
 @app.command(name="update")
 def update(
-    channel: str = typer.Option(
-        "main", "--channel", "-c", help="Target branch or tag to update to (default: main)"
+    channel: str | None = typer.Option(
+        None,
+        "--channel",
+        "-c",
+        help="Specific release tag or branch to update to (default: latest stable release tag)",
+    ),
+    edge: bool = typer.Option(
+        False,
+        "--edge",
+        "--main",
+        "--nightly",
+        help="Update to the latest bleeding-edge commit on 'main' branch",
     ),
     force: bool = typer.Option(
-        False, "--force", "-f", help="Force reinstall from the remote repository"
+        False, "--force", "-f", help="Force reinstall even if already on the latest version"
     ),
 ) -> None:
-    """Update AgentEverywhereFlow to the latest release or main branch."""
+    """Update AgentEverywhereFlow to the latest stable release tag (default) or bleeding-edge main."""
     import shutil
     import subprocess
     import sys
     from pathlib import Path
 
+    target_ref = "main" if edge else (channel or None)
+    is_stable = not edge and channel is None
+
+    if is_stable:
+        latest_tag = _resolve_latest_release_tag()
+        target_ref = latest_tag or "main"
+    elif not target_ref:
+        target_ref = "main"
+
     console.print(
         Panel(
-            f"[bold cyan]🔄 Updating AgentEverywhereFlow (Current: v{__version__})[/bold cyan]\n"
-            f"[dim]Checking environment and fetching latest version from '{channel}'...[/dim]",
+            f"[bold cyan]🔄 Updating AgentEverywhereFlow[/bold cyan]\n"
+            f"[dim]Current version:[/dim] [bold yellow]v{__version__}[/bold yellow]\n"
+            f"[dim]Target release:[/dim]  [bold green]{target_ref}[/bold green] "
+            f"({'latest stable tag' if is_stable else 'bleeding-edge/custom'})",
             title="AEFlow Self-Updater",
             border_style="cyan",
         )
     )
+
+    # If already on this version and not forcing:
+    norm_curr = f"v{__version__}".lower()
+    norm_target = target_ref.lower()
+    if is_stable and (norm_curr == norm_target or norm_curr == f"v{norm_target}") and not force:
+        console.print(
+            f"[bold green]✓ AgentEverywhereFlow is already up to date ({target_ref})![/bold green]\n"
+            f"[dim]To test the bleeding-edge development build, use: [cyan]aef update --edge[/cyan]\n"
+            f"To force reinstall the current version, use: [cyan]aef update --force[/cyan][/dim]"
+        )
+        return
 
     # 1. Check if running in a local Git repository
     repo_dir = Path(__file__).resolve().parent.parent
     if (repo_dir / ".git").exists() and shutil.which("git"):
         try:
             console.print(
-                f"[bold yellow]Found local Git repository at {repo_dir}. Pulling from '{channel}'...[/bold yellow]"
+                f"[bold yellow]Found local Git repository at {repo_dir}. Checking out '{target_ref}'...[/bold yellow]"
             )
-            res = subprocess.run(
-                ["git", "pull", "origin", channel],
+            subprocess.run(
+                ["git", "fetch", "--tags", "origin"],
                 cwd=repo_dir,
                 capture_output=True,
                 text=True,
             )
+            git_cmd = (
+                ["git", "pull", "origin", "main"]
+                if target_ref == "main"
+                else ["git", "checkout", target_ref]
+            )
+            res = subprocess.run(git_cmd, cwd=repo_dir, capture_output=True, text=True)
             if res.returncode == 0:
                 console.print(
-                    f"[bold green]✓ Successfully updated via Git pull:[/bold green]\n{res.stdout.strip()}"
+                    f"[bold green]✓ Successfully updated local Git repository to {target_ref}![/bold green]"
                 )
                 return
         except Exception as e:
-            console.print(f"[dim]Git pull fallback: {e}[/dim]")
+            console.print(f"[dim]Git fallback: {e}[/dim]")
 
     # 2. Check if uv is available
     uv_path = shutil.which("uv")
     if uv_path:
-        console.print("[bold yellow]Attempting update via 'uv tool' ...[/bold yellow]")
-        cmd = (
-            [
-                uv_path,
-                "tool",
-                "install",
-                "--force",
-                f"git+https://github.com/mcocdaa/AgentEverywhereFlow.git@{channel}",
-            ]
-            if force
-            else [uv_path, "tool", "upgrade", "agenteverywhereflow"]
-        )
+        console.print(f"[bold yellow]Updating via 'uv tool' to {target_ref} ...[/bold yellow]")
+        install_target = f"git+https://github.com/mcocdaa/AgentEverywhereFlow.git@{target_ref}"
+        cmd = [uv_path, "tool", "install", "--force", install_target]
         try:
             res = subprocess.run(cmd, capture_output=True, text=True)
             if res.returncode == 0:
                 msg = res.stdout.strip() or res.stderr.strip()
-                console.print(f"[bold green]✓ Update successful via uv tool![/bold green]\n{msg}")
+                console.print(
+                    f"[bold green]✓ Successfully updated to {target_ref} via uv tool![/bold green]\n{msg}"
+                )
                 return
-            else:
-                # If 'uv tool upgrade' failed, try explicit reinstall from git
-                fallback_cmd = [
-                    uv_path,
-                    "tool",
-                    "install",
-                    "--force",
-                    f"git+https://github.com/mcocdaa/AgentEverywhereFlow.git@{channel}",
-                ]
-                res_fb = subprocess.run(fallback_cmd, capture_output=True, text=True)
-                if res_fb.returncode == 0:
-                    msg = res_fb.stdout.strip() or res_fb.stderr.strip()
-                    console.print(
-                        f"[bold green]✓ Successfully reinstalled latest via uv tool![/bold green]\n{msg}"
-                    )
-                    return
         except Exception as e:
             console.print(f"[dim]uv tool error: {e}[/dim]")
 
     # 3. Fallback to pip
     try:
-        console.print("[bold yellow]Attempting update via pip ...[/bold yellow]")
+        console.print(f"[bold yellow]Updating via pip to {target_ref} ...[/bold yellow]")
         pip_cmd = [
             sys.executable,
             "-m",
             "pip",
             "install",
             "--upgrade",
-            f"git+https://github.com/mcocdaa/AgentEverywhereFlow.git@{channel}",
+            f"git+https://github.com/mcocdaa/AgentEverywhereFlow.git@{target_ref}",
         ]
         res_pip = subprocess.run(pip_cmd, capture_output=True, text=True)
         if res_pip.returncode == 0:
-            console.print("[bold green]✓ Successfully updated via pip![/bold green]")
+            console.print(
+                f"[bold green]✓ Successfully updated to {target_ref} via pip![/bold green]"
+            )
             return
         else:
             console.print(f"[bold red]❌ Pip update failed: {res_pip.stderr.strip()}[/bold red]")
