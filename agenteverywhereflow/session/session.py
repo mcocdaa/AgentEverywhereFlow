@@ -16,7 +16,7 @@ from PIL import Image
 from pydantic import BaseModel
 
 from agenteverywhereflow.agent.loop import extract_codeact_blocks
-from agenteverywhereflow.agent.prompts import get_prompt_for_target
+from agenteverywhereflow.agent.prompts import get_prompt_for_targets
 from agenteverywhereflow.capturer import get_capturer
 from agenteverywhereflow.capturer.base import Rect, TargetInfo, TargetType
 from agenteverywhereflow.config import AppConfig, ExecutionMode, config
@@ -44,11 +44,12 @@ class TurnResult(BaseModel):
 
 
 class ChatSession:
-    """Stateful multi-turn conversational session bound to a designated target window or screen."""
+    """Stateful multi-turn conversational session bound to designated target window(s) or screen."""
 
     def __init__(
         self,
-        target: TargetInfo,
+        target: TargetInfo | None = None,
+        targets: list[TargetInfo] | None = None,
         session_id: str | None = None,
         mode: ExecutionMode = ExecutionMode.MINIMAL_PYTHON,
         permission_mode: PermissionMode = PermissionMode.AUTO,
@@ -57,7 +58,15 @@ class ChatSession:
         approval_timeout: float = 300.0,
     ) -> None:
         self.session_id = session_id or uuid.uuid4().hex[:10]
-        self.target = target
+        if targets:
+            self.targets = list(targets)
+            self.target = target or self.targets[0]
+        elif target:
+            self.target = target
+            self.targets = [target]
+        else:
+            raise ValueError("Either target or targets must be specified.")
+
         self.mode = mode
         self.config = app_config or config
         self.planner_func = planner_func
@@ -74,6 +83,7 @@ class ChatSession:
         self.token_usage = TokenUsageStats()
 
         self.messages: list[dict[str, Any]] = []
+        self.recorded_steps: list[dict[str, Any]] = []
         self._init_system_prompt()
 
         # Approval coordination
@@ -87,9 +97,11 @@ class ChatSession:
         self._client: Any = None
 
     def _init_system_prompt(self) -> None:
-        """Initialize or refresh system prompt based on active target and execution mode."""
+        """Initialize or refresh system prompt based on active target(s) and execution mode."""
         is_minimal = self.mode == ExecutionMode.MINIMAL_PYTHON
-        base_prompt = get_prompt_for_target(self.target, is_minimal_mode=is_minimal)
+        base_prompt = get_prompt_for_targets(
+            self.targets, active_target=self.target, is_minimal_mode=is_minimal
+        )
         dialogue_instruction = (
             "\nInteractive Dialogue Mode Active:\n"
             "- You are participating in a multi-turn conversation with the operator.\n"
@@ -147,8 +159,74 @@ class ChatSession:
         """Update permission mode (auto or manual) dynamically."""
         self.permission_gate.mode = mode
 
-    def switch_target(self, new_target: TargetInfo) -> None:
-        """Dynamically switch current target window or display."""
+    def add_target(self, new_target: TargetInfo) -> None:
+        """Add a new target window or display to the multi-window session pool."""
+        for t in self.targets:
+            if t.target_id == new_target.target_id:
+                return
+        self.targets.append(new_target)
+        self._init_system_prompt()
+        self.messages.append(
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": f"[Target Added] Added target to multi-window session: '{new_target.title}' (ID: {new_target.target_id})",
+                    }
+                ],
+            }
+        )
+
+    def remove_target(self, target_id_or_title: str) -> bool:
+        """Remove a target from the session pool."""
+        query = target_id_or_title.strip().lower()
+        found = None
+        for t in self.targets:
+            if query == t.target_id.lower() or query in t.title.lower():
+                found = t
+                break
+        if not found or len(self.targets) <= 1:
+            return False
+        self.targets.remove(found)
+        if self.target.target_id == found.target_id:
+            self.target = self.targets[0]
+        self._init_system_prompt()
+        return True
+
+    def switch_target(self, target_or_query: TargetInfo | str) -> TargetInfo:
+        """Dynamically switch current active target window or display."""
+        if isinstance(target_or_query, TargetInfo):
+            new_target: TargetInfo = target_or_query
+            if not any(t.target_id == new_target.target_id for t in self.targets):
+                self.targets.append(new_target)
+        else:
+            query = str(target_or_query).strip().lower()
+            found_target: TargetInfo | None = None
+            for t in self.targets:
+                if (
+                    query == t.target_id.lower()
+                    or query in t.title.lower()
+                    or query in (t.process_name or "").lower()
+                ):
+                    found_target = t
+                    break
+            if not found_target:
+                # Resolve from OS if not found in current pool
+                all_os = self.capturer.list_targets()
+                for t in all_os:
+                    if (
+                        query == t.target_id.lower()
+                        or query in t.title.lower()
+                        or query in (t.process_name or "").lower()
+                    ):
+                        found_target = t
+                        self.targets.append(t)
+                        break
+            if not found_target:
+                return self.target
+            new_target = found_target
+
         self.target = new_target
         self._init_system_prompt()
         self.messages.append(
@@ -157,15 +235,25 @@ class ChatSession:
                 "content": [
                     {
                         "type": "text",
-                        "text": f"[Target Switch] Current active target has been switched to: {new_target}",
+                        "text": f"[Target Switch] Current active target has been switched to: '{new_target.title}' (ID: {new_target.target_id})",
                     }
                 ],
             }
         )
+        return self.target
+
+    def _on_engine_switch_target(self, tgt: TargetInfo) -> None:
+        """Engine callback when agent code calls switch_to()."""
+        if self.target.target_id != tgt.target_id:
+            self.target = tgt
+            if not any(t.target_id == tgt.target_id for t in self.targets):
+                self.targets.append(tgt)
+            self._init_system_prompt()
 
     def reset_history(self) -> None:
         """Reset conversation context while retaining system prompt and current target."""
         self.messages.clear()
+        self.recorded_steps.clear()
         self._init_system_prompt()
         self.state = SessionState.IDLE
         self.turn_count = 0
@@ -246,6 +334,7 @@ class ChatSession:
         return session_storage.save_session(
             session_id=self.session_id,
             target=self.target,
+            targets=self.targets,
             mode=self.mode,
             permission_mode=self.permission_gate.mode,
             state=self.state.value,
@@ -254,6 +343,7 @@ class ChatSession:
             messages=self.messages,
             token_usage=self.token_usage,
             created_at=self.created_at,
+            recorded_steps=self.recorded_steps,
         )
 
     @classmethod
@@ -263,22 +353,56 @@ class ChatSession:
         if not meta:
             return None
         raw_messages = session_storage.load_messages(session_id)
-        rect = Rect(
-            x=meta.target_rect.get("x", 0),
-            y=meta.target_rect.get("y", 0),
-            width=meta.target_rect.get("width", 800),
-            height=meta.target_rect.get("height", 600),
-        )
-        target = TargetInfo(
-            target_id=meta.target_id,
-            target_type=TargetType(meta.target_type),
-            title=meta.target_title,
-            process_name=meta.process_name,
-            rect=rect,
-            native_handle=meta.native_handle,
-        )
+
+        targets_list: list[TargetInfo] = []
+        if getattr(meta, "targets", None):
+            for t_dict in meta.targets:
+                r_dict = t_dict.get("rect", {})
+                rect = Rect(
+                    x=r_dict.get("x", 0),
+                    y=r_dict.get("y", 0),
+                    width=r_dict.get("width", 800),
+                    height=r_dict.get("height", 600),
+                )
+                targets_list.append(
+                    TargetInfo(
+                        target_id=t_dict.get("target_id", ""),
+                        target_type=TargetType(t_dict.get("target_type", "window")),
+                        title=t_dict.get("title", ""),
+                        process_name=t_dict.get("process_name", ""),
+                        rect=rect,
+                        native_handle=t_dict.get("native_handle", 0),
+                    )
+                )
+
+        if not targets_list:
+            rect = Rect(
+                x=meta.target_rect.get("x", 0),
+                y=meta.target_rect.get("y", 0),
+                width=meta.target_rect.get("width", 800),
+                height=meta.target_rect.get("height", 600),
+            )
+            target = TargetInfo(
+                target_id=meta.target_id,
+                target_type=TargetType(meta.target_type),
+                title=meta.target_title,
+                process_name=meta.process_name,
+                rect=rect,
+                native_handle=meta.native_handle,
+            )
+            targets_list = [target]
+
+        active_target = None
+        for t in targets_list:
+            if t.target_id == meta.target_id:
+                active_target = t
+                break
+        if not active_target:
+            active_target = targets_list[0]
+
         session = cls(
-            target=target,
+            target=active_target,
+            targets=targets_list,
             session_id=meta.session_id,
             mode=ExecutionMode(meta.mode),
             permission_mode=PermissionMode(meta.permission_mode),
@@ -291,6 +415,7 @@ class ChatSession:
         session.state = SessionState(meta.state)
         if raw_messages:
             session.messages = raw_messages
+        session.recorded_steps = session_storage.load_recorded_steps(session_id)
         return session
 
     def wait_for_server_approval(self, request: ApprovalRequest) -> ApprovalDecision:
@@ -378,43 +503,88 @@ class ChatSession:
             # 1. Bring target window into focus
             self.capturer.focus(self.target)
 
-            # 2. Capture screenshot
-            try:
-                img = self.capturer.capture(self.target)
-                img_b64 = self._encode_image(img)
-            except Exception as e:
-                err_msg = f"Failed to capture target viewport: {e}"
-                self.state = SessionState.ERROR
-                self.emit_event(SessionEventType.ERROR, step=turn_steps, payload={"error": err_msg})
-                return TurnResult(
-                    success=False,
-                    completed=False,
-                    response="",
-                    steps_executed=turn_steps,
-                    error=err_msg,
-                )
+            # 2. Capture screenshot(s) and build visual observation
+            if len(self.targets) <= 1:
+                try:
+                    img = self.capturer.capture(self.target)
+                    img_b64 = self._encode_image(img)
+                except Exception as e:
+                    err_msg = f"Failed to capture target viewport: {e}"
+                    self.state = SessionState.ERROR
+                    self.emit_event(
+                        SessionEventType.ERROR, step=turn_steps, payload={"error": err_msg}
+                    )
+                    return TurnResult(
+                        success=False,
+                        completed=False,
+                        response="",
+                        steps_executed=turn_steps,
+                        error=err_msg,
+                    )
 
-            # 3. Add visual observation
-            step_message = {
-                "role": "user",
-                "content": [
+                step_message = {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": f"Current screenshot of {self.target.title} ({img.width}x{img.height}). What is your next action?",
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"},
+                        },
+                    ],
+                }
+                obs_width, obs_height = img.width, img.height
+            else:
+                obs_content: list[dict[str, Any]] = []
+                last_img = None
+                for t in self.targets:
+                    is_active = t.target_id == self.target.target_id
+                    active_tag = " [ACTIVE FOCUS]" if is_active else ""
+                    try:
+                        t_img = self.capturer.capture(t)
+                        last_img = t_img
+                        t_b64 = self._encode_image(t_img)
+                        obs_content.append(
+                            {
+                                "type": "text",
+                                "text": f"Screenshot of target '{t.title}' (ID: {t.target_id}, Resolution: {t_img.width}x{t_img.height}){active_tag}:",
+                            }
+                        )
+                        obs_content.append(
+                            {
+                                "type": "image_url",
+                                "image_url": {"url": f"data:image/jpeg;base64,{t_b64}"},
+                            }
+                        )
+                    except Exception as e:
+                        obs_content.append(
+                            {
+                                "type": "text",
+                                "text": f"[Failed to capture target '{t.title}': {e}]",
+                            }
+                        )
+                obs_content.append(
                     {
                         "type": "text",
-                        "text": f"Current screenshot of {self.target.title} ({img.width}x{img.height}). What is your next action?",
-                    },
-                    {
-                        "type": "image_url",
-                        "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"},
-                    },
-                ],
-            }
+                        "text": f"Active target is '{self.target.title}' (ID: {self.target.target_id}). What is your next action?",
+                    }
+                )
+                step_message = {
+                    "role": "user",
+                    "content": obs_content,
+                }
+                obs_width = last_img.width if last_img else self.target.rect.width
+                obs_height = last_img.height if last_img else self.target.rect.height
+
             self.messages.append(step_message)
             self.messages = self._prune_visual_history(self.messages)
 
             self.emit_event(
                 SessionEventType.OBSERVE,
                 step=turn_steps,
-                payload={"width": img.width, "height": img.height},
+                payload={"width": obs_width, "height": obs_height},
             )
 
             # 4. Reason with LLM or custom planner
@@ -525,9 +695,26 @@ class ChatSession:
                         continue
 
                     # Executed with permission
-                    result = self.engine.execute(code_to_exec, self.target)
+                    result = self.engine.execute(
+                        code_to_exec,
+                        self.target,
+                        targets=self.targets,
+                        on_switch_target=self._on_engine_switch_target,
+                    )
                     executed_action = True
                     action_success = result.success
+                    if result.success:
+                        self.recorded_steps.append(
+                            {
+                                "turn": self.turn_count,
+                                "step": turn_steps,
+                                "total_step": self.total_steps,
+                                "mode": "minimal",
+                                "code": code_to_exec,
+                                "target_id": self.target.target_id,
+                                "target_title": self.target.title,
+                            }
+                        )
 
                     self.emit_event(
                         SessionEventType.ACTION_EXECUTED,
@@ -616,9 +803,26 @@ class ChatSession:
                         )
                         continue
 
-                    result = self.engine.execute(payload_data, self.target)
+                    result = self.engine.execute(
+                        payload_data,
+                        self.target,
+                        targets=self.targets,
+                        on_switch_target=self._on_engine_switch_target,
+                    )
                     executed_action = True
                     action_success = result.success
+                    if result.success:
+                        self.recorded_steps.append(
+                            {
+                                "turn": self.turn_count,
+                                "step": turn_steps,
+                                "total_step": self.total_steps,
+                                "mode": "guarded",
+                                "action": payload_data,
+                                "target_id": self.target.target_id,
+                                "target_title": self.target.title,
+                            }
+                        )
 
                     self.emit_event(
                         SessionEventType.ACTION_EXECUTED,

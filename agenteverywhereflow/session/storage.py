@@ -56,6 +56,7 @@ class SessionMetadata(BaseModel):
     created_at: float = Field(default_factory=time.time)
     updated_at: float = Field(default_factory=time.time)
     token_usage: TokenUsageStats = Field(default_factory=TokenUsageStats)
+    targets: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class SessionStorage:
@@ -80,10 +81,32 @@ class SessionStorage:
         messages: list[dict[str, Any]],
         token_usage: TokenUsageStats,
         created_at: float,
+        targets: list[TargetInfo] | None = None,
+        recorded_steps: list[dict[str, Any]] | None = None,
     ) -> Path:
         """Atomically persist session metadata and conversational trajectory to disk."""
         s_dir = self._get_session_dir(session_id)
         s_dir.mkdir(parents=True, exist_ok=True)
+
+        all_tgts = targets or [target]
+        targets_serialized = [
+            {
+                "target_id": t.target_id,
+                "title": t.title,
+                "target_type": t.target_type.value
+                if hasattr(t.target_type, "value")
+                else str(t.target_type),
+                "target_rect": {
+                    "x": t.rect.x,
+                    "y": t.rect.y,
+                    "width": t.rect.width,
+                    "height": t.rect.height,
+                },
+                "native_handle": t.native_handle or 0,
+                "process_name": t.process_name or "",
+            }
+            for t in all_tgts
+        ]
 
         meta = SessionMetadata(
             session_id=session_id,
@@ -110,6 +133,7 @@ class SessionStorage:
             created_at=created_at,
             updated_at=time.time(),
             token_usage=token_usage,
+            targets=targets_serialized,
         )
 
         meta_file = s_dir / "meta.json"
@@ -137,6 +161,11 @@ class SessionStorage:
         with open(msg_file, "w", encoding="utf-8") as f:
             json.dump(sanitized_messages, f, indent=2, ensure_ascii=False)
 
+        if recorded_steps is not None:
+            rec_file = s_dir / "recorded_steps.json"
+            with open(rec_file, "w", encoding="utf-8") as f:
+                json.dump(recorded_steps, f, indent=2, ensure_ascii=False)
+
         return s_dir
 
     def load_metadata(self, session_id: str) -> SessionMetadata | None:
@@ -161,7 +190,19 @@ class SessionStorage:
             with open(msg_file, encoding="utf-8") as f:
                 return json.load(f)
         except Exception as e:
-            logger.warning(f"Failed to load session messages for {session_id}: {e}")
+            logger.warning(f"Failed to load messages for {session_id}: {e}")
+            return []
+
+    def load_recorded_steps(self, session_id: str) -> list[dict[str, Any]]:
+        """Load recorded action steps from disk."""
+        rec_file = self._get_session_dir(session_id) / "recorded_steps.json"
+        if not rec_file.exists():
+            return []
+        try:
+            with open(rec_file, encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            logger.warning(f"Failed to load recorded steps for {session_id}: {e}")
             return []
 
     def list_sessions(self) -> list[SessionMetadata]:

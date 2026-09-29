@@ -20,7 +20,8 @@ class SessionManager:
 
     def create_session(
         self,
-        target: TargetInfo,
+        target: TargetInfo | None = None,
+        targets: list[TargetInfo] | None = None,
         session_id: str | None = None,
         mode: ExecutionMode = ExecutionMode.MINIMAL_PYTHON,
         permission_mode: PermissionMode = PermissionMode.AUTO,
@@ -29,6 +30,7 @@ class SessionManager:
         """Create, register, and return a new ChatSession."""
         session = ChatSession(
             target=target,
+            targets=targets,
             session_id=session_id,
             mode=mode,
             permission_mode=permission_mode,

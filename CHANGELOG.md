@@ -3,6 +3,35 @@
 所有关于 **AgentEverywhereFlow (AEFlow)** 的重要变动都将记录在此文件中。  
 本项目遵循 [Semantic Versioning (语义化版本 2.0.0)](https://semver.org/lang/zh-CN/) 与 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/) 规范。
 
+## [0.1.5] - 2026-09-29
+
+### 新增与核心特性 (Added & Core Features)
+- **跨应用多窗口协同会话 (Multi-Target Cross-App Coordination)**：
+  - 会话支持绑定多个应用窗口与屏幕（`targets: list[TargetInfo]`），并维护当前活跃视口（`active_target`）。
+  - 支持多视口标注视觉感知：在每轮感知中，多窗口截图分别附带标题、分辨率、Target ID 及 `[ACTIVE FOCUS]` 焦点标记传递给 VLM。
+  - 支持代码内原生窗口切换与指定：在 CodeAct 中注入 `switch_to(query)` 与 `focus(query)`，且 `click(x, y, target=...)`、`type_text(..., target=...)` 等所有原子操作支持 `target` 参数定向执行。
+  - CLI 对话启动支持多目标绑定：`aef chat -t "豆包" -t "Chrome"` 或 `aef chat -t "豆包,Chrome"`。
+  - 对话内全新交互式窗口池命令：
+    - `/target` 或 `/targets`（或 `/target list`）：以 Rich 表格列出当前绑定的所有窗口、分辨率与活跃状态。
+    - `/target add <query>`：动态检索并向当前会话追加新应用窗口。
+    - `/target remove <query>`（或 `rm`）：从会话池中移除窗口。
+    - `/target switch <query>`（或 `/target <query>`）：切换活跃交互窗口。
+- **工作流录制与零 LLM 确定性回放引擎 (`aef workflow`)**：
+  - 会话动作自动录制：会话执行的每一次成功交互（CodeAct 或 Guarded Action）自动落盘保存为动作序列轨迹。
+  - **导出独立免 API Python 脚本 (`export_to_python`)**：
+    - 一键导出为完全独立的原生 Python 自动化脚本，**0 外部大模型 API 调用，0 Token 成本**。
+    - 脚本内嵌动态窗口重定位、视口坐标换算与原生键鼠驱动，可在任意同构环境中以最大速度高保真重放。
+  - **导出声明式 YAML 工作流 (`export_to_yaml`)**：
+    - 导出人类可读、易维护的声明式 `.yaml` 工作流规范。
+  - **无头确定性回放运行器 (`aef workflow play`)**：
+    - 支持命令 `aef workflow play <workflow.yaml> [--speed 1.5] [--dry-run]`。
+    - 运行时自动重构绑定当前操作系统桌面上的窗口视口，自适应坐标映射与回放速度缩放。
+  - 对话内快捷导出命令 `/export [filename.py | filename.yaml]`，默认保存至 `~/.aef/workflows/`。
+- **自更新与编码鲁棒性优化**：
+  - 自更新逻辑修复，解决 Windows 环境下 `gbk` 解码异常与 `uv tool` 升级链路问题。
+
+---
+
 ## [0.1.4] - 2026-09-28
 
 ### 新增与核心特性 (Added & Core Features)

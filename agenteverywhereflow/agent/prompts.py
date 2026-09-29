@@ -87,3 +87,43 @@ def get_prompt_for_target(target: TargetInfo, is_minimal_mode: bool = True) -> s
         width=target.rect.width,
         height=target.rect.height,
     )
+
+
+def get_prompt_for_targets(
+    targets: list[TargetInfo],
+    active_target: TargetInfo | None = None,
+    is_minimal_mode: bool = True,
+) -> str:
+    """Format prompt with live single-target or multi-target geometry."""
+    active = active_target or (targets[0] if targets else None)
+    if not active:
+        raise ValueError("At least one target must be provided.")
+
+    if len(targets) <= 1:
+        return get_prompt_for_target(active, is_minimal_mode=is_minimal_mode)
+
+    base = get_prompt_for_target(active, is_minimal_mode=is_minimal_mode)
+
+    targets_desc = ["\nBound Multi-Window Targets:"]
+    for i, t in enumerate(targets, 1):
+        status_tag = " [ACTIVE FOCUS]" if t.target_id == active.target_id else ""
+        targets_desc.append(
+            f'  {i}. [{t.target_type.value}] "{t.title}" (Resolution: {t.rect.width}x{t.rect.height} px, ID: {t.target_id}){status_tag}'
+        )
+
+    multi_guide = (
+        "\n\nMulti-Target Cross-Window Coordination:\n"
+        "- Multiple application windows are bound to this session.\n"
+        '- Use `switch_to("<target_query>")` or `focus("<target_query>")` to bring a window into foreground.\n'
+        '- You can also pass target="<window_title_or_id>" directly to `click(x, y, target=...)` or `type_text(text, target=...)`.\n'
+        "- If target is omitted, actions execute against the currently active window.\n"
+        "- In screenshots, each window is presented with its name, ID, and viewport dimensions."
+        if is_minimal_mode
+        else (
+            "\n\nMulti-Target Coordination:\n"
+            '- Use {"action": "switch_target", "target": "<window_query>"} to switch active window.\n'
+            '- You can also include "target": "<window_query>" in any atomic action schema.'
+        )
+    )
+
+    return base + "\n".join(targets_desc) + multi_guide

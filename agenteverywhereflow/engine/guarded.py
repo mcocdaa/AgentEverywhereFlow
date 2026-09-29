@@ -44,7 +44,23 @@ class GuardedActionEngine(BaseExecutionEngine):
         if not action:
             return ExecutionResult(success=False, error="No action specified in payload")
 
-        # 1. Safety Guard Check
+        # 1. Resolve Target (support multi-target override)
+        all_targets: list[TargetInfo] = kwargs.get("targets") or [target]
+        act_target = target
+        target_override = payload.get("target")
+        if target_override:
+            query = str(target_override).strip().lower()
+            for t in all_targets:
+                if query == t.target_id.lower() or t.target_id.lower().startswith(query):
+                    act_target = t
+                    break
+            else:
+                for t in all_targets:
+                    if query in t.title.lower() or query in (t.process_name or "").lower():
+                        act_target = t
+                        break
+
+        # 2. Safety Guard Check
         if config.require_human_confirmation or self._is_sensitive_action(payload):
             self._print_action(
                 f"[bold yellow]⚠️ Safety Gate:[/bold yellow] Agent requests action: [cyan]{payload}[/cyan]"
@@ -57,26 +73,42 @@ class GuardedActionEngine(BaseExecutionEngine):
                     output="Action rejected by operator.",
                 )
 
-        # 2. Dispatch Action
+        # 3. Dispatch Action
         try:
-            if action == "click":
+            if action in ("switch_target", "switch_to"):
+                on_switch = kwargs.get("on_switch_target")
+                if on_switch:
+                    on_switch(act_target)
+                self._print_action(
+                    f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]switch_target[/bold cyan]({repr(act_target.title)}) "
+                    f"[dim]──▶ Focused: '{act_target.title}' [ID: {act_target.target_id}][/dim]"
+                )
+                return ExecutionResult(
+                    success=True, output=f"Switched active target to: {act_target.title}"
+                )
+
+            elif action == "click":
                 x = float(payload.get("x", 0))
                 y = float(payload.get("y", 0))
                 button = payload.get("button", "left")
                 clicks = int(payload.get("clicks", 1))
                 sx, sy = CoordinateProjector.to_screen_coords(
-                    target, x, y, img_width=target.rect.width, img_height=target.rect.height
+                    act_target,
+                    x,
+                    y,
+                    img_width=act_target.rect.width,
+                    img_height=act_target.rect.height,
                 )
                 self._print_action(
                     f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]click[/bold cyan](x={int(x)}, y={int(y)}) "
-                    f"[dim]──▶ Screen: ({sx}, {sy}) [button={button}, clicks={clicks}][/dim]"
+                    f"[dim]──▶ Screen: ({sx}, {sy}) [button={button}, clicks={clicks}, window='{act_target.title}'][/dim]"
                 )
                 driver.click(
                     x=sx,
                     y=sy,
                     button=button,  # type: ignore
                     clicks=clicks,
-                    window_handle=target.native_handle,
+                    window_handle=act_target.native_handle,
                     window_rel_x=int(x),
                     window_rel_y=int(y),
                 )
@@ -86,11 +118,15 @@ class GuardedActionEngine(BaseExecutionEngine):
                 x = float(payload.get("x", 0))
                 y = float(payload.get("y", 0))
                 sx, sy = CoordinateProjector.to_screen_coords(
-                    target, x, y, img_width=target.rect.width, img_height=target.rect.height
+                    act_target,
+                    x,
+                    y,
+                    img_width=act_target.rect.width,
+                    img_height=act_target.rect.height,
                 )
                 self._print_action(
                     f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]move[/bold cyan](x={int(x)}, y={int(y)}) "
-                    f"[dim]──▶ Screen: ({sx}, {sy})[/dim]"
+                    f"[dim]──▶ Screen: ({sx}, {sy}) [window='{act_target.title}'][/dim]"
                 )
                 driver.move_to(sx, sy)
                 return ExecutionResult(success=True, output=f"Moved to ({sx}, {sy})")
@@ -104,25 +140,25 @@ class GuardedActionEngine(BaseExecutionEngine):
                 )
                 self._print_action(
                     f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]type_text[/bold cyan]({repr(text)}) "
-                    f"[dim]──▶ Method: {method_desc}[/dim]"
+                    f"[dim]──▶ Method: {method_desc} [window='{act_target.title}'][/dim]"
                 )
-                driver.type_text(text, window_handle=target.native_handle)
+                driver.type_text(text, window_handle=act_target.native_handle)
                 return ExecutionResult(success=True, output=f"Typed text: {text}")
 
             elif action == "press":
                 key = str(payload.get("key", ""))
                 self._print_action(
-                    f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]press[/bold cyan]({repr(key)})"
+                    f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]press[/bold cyan]({repr(key)}) [dim][window='{act_target.title}'][/dim]"
                 )
-                driver.press_key(key, window_handle=target.native_handle)
+                driver.press_key(key, window_handle=act_target.native_handle)
                 return ExecutionResult(success=True, output=f"Pressed key: {key}")
 
             elif action == "hotkey":
                 keys = payload.get("keys", [])
                 self._print_action(
-                    f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]hotkey[/bold cyan]({', '.join(repr(k) for k in keys)})"
+                    f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]hotkey[/bold cyan]({', '.join(repr(k) for k in keys)}) [dim][window='{act_target.title}'][/dim]"
                 )
-                driver.hotkey(*keys, window_handle=target.native_handle)
+                driver.hotkey(*keys, window_handle=act_target.native_handle)
                 return ExecutionResult(success=True, output=f"Sent hotkey: {keys}")
 
             elif action == "scroll":
@@ -131,15 +167,15 @@ class GuardedActionEngine(BaseExecutionEngine):
                 gy = payload.get("y")
                 pos_info = f" at ({gx}, {gy})" if gx is not None and gy is not None else ""
                 self._print_action(
-                    f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]scroll[/bold cyan](amount={amount}{pos_info})"
+                    f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]scroll[/bold cyan](amount={amount}{pos_info}) [dim][window='{act_target.title}'][/dim]"
                 )
                 if gx is not None and gy is not None:
                     sx, sy = CoordinateProjector.to_screen_coords(
-                        target,
+                        act_target,
                         float(gx),
                         float(gy),
-                        img_width=target.rect.width,
-                        img_height=target.rect.height,
+                        img_width=act_target.rect.width,
+                        img_height=act_target.rect.height,
                     )
                     driver.scroll(amount, x=sx, y=sy)
                 else:

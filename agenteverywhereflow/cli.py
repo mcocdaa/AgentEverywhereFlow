@@ -409,11 +409,11 @@ def run(
 
 @app.command(name="chat")
 def chat(
-    target_query: str | None = typer.Option(
+    target_queries: list[str] | None = typer.Option(
         None,
         "--target",
         "-t",
-        help="Target ID, native handle, table index, or process/title substring. If omitted, opens interactive picker.",
+        help="Target ID, native handle, table index, or process/title substring. Can be specified multiple times or comma-separated.",
     ),
     resume: str | None = typer.Option(
         None,
@@ -447,6 +447,7 @@ def chat(
     from rich.markup import escape
 
     from agenteverywhereflow.capturer import get_capturer
+    from agenteverywhereflow.capturer.base import TargetInfo
     from agenteverywhereflow.capturer.selector import TargetSelector, resolve_target
     from agenteverywhereflow.config import config
     from agenteverywhereflow.session import (
@@ -488,28 +489,37 @@ def chat(
             f"KV Cache Hit Rate: {session.token_usage.cache_hit_rate}%)[/bold green]"
         )
     else:
-        # Resolve target
-        if target_query:
-            selected = resolve_target(all_targets, target_query)
-            if not selected:
-                console.print(
-                    f"[bold red]❌ No target found matching query: '{target_query}'[/bold red]"
-                )
-                console.print(
-                    "[dim]Run 'aef list-targets' to view all available Target IDs and indices.[/dim]"
-                )
-                raise typer.Exit(1)
+        # Resolve target(s)
+        resolved_targets: list[TargetInfo] = []
+        if target_queries:
+            raw_queries: list[str] = []
+            for item in target_queries:
+                for q in item.split(","):
+                    clean_q = q.strip()
+                    if clean_q:
+                        raw_queries.append(clean_q)
+            for q in raw_queries:
+                tgt = resolve_target(all_targets, q)
+                if not tgt:
+                    console.print(f"[bold red]❌ No target found matching query: '{q}'[/bold red]")
+                    console.print(
+                        "[dim]Run 'aef list-targets' to view all available Target IDs and indices.[/dim]"
+                    )
+                    raise typer.Exit(1)
+                resolved_targets.append(tgt)
         else:
             selector = TargetSelector()
-            selected = selector.interactive_select()
-            if not selected:
+            selected_single = selector.interactive_select()
+            if not selected_single:
                 console.print("[yellow]Dialogue session cancelled.[/yellow]")
                 raise typer.Exit(0)
+            resolved_targets = [selected_single]
 
         # Initialize conversational session
         session = session_manager.create_session(
-            target=selected, mode=mode, permission_mode=permission
+            targets=resolved_targets, mode=mode, permission_mode=permission
         )
+        selected = session.target
 
     # Attach live Rich terminal event listener
     def on_session_event(event: SessionEvent) -> None:
@@ -573,18 +583,31 @@ def chat(
     session.add_listener(on_session_event)
 
     # Print session welcome banner
+    targets_info = ""
+    if len(session.targets) > 1:
+        targets_info = (
+            f"\n[bold cyan]🪟 Bound Targets ({len(session.targets)}):[/bold cyan]\n"
+            + "\n".join(
+                f"  {i}. {t.title} [dim]({t.rect.width}x{t.rect.height}, ID: {t.target_id}){' [ACTIVE]' if t.target_id == selected.target_id else ''}[/dim]"
+                for i, t in enumerate(session.targets, 1)
+            )
+            + "\n"
+        )
+
     console.print(
         Panel(
-            f"[bold cyan]🎯 Target:[/bold cyan] {selected.title} [dim]({selected.rect.width}x{selected.rect.height})[/dim]\n"
-            f"[bold cyan]🆔 Target ID:[/bold cyan] {selected.target_id}\n"
+            f"[bold cyan]🎯 Active Target:[/bold cyan] {selected.title} [dim]({selected.rect.width}x{selected.rect.height})[/dim]\n"
+            f"[bold cyan]🆔 Target ID:[/bold cyan] {selected.target_id}"
+            f"{targets_info}\n"
             f"[bold cyan]🛡️ Permission:[/bold cyan] [bold magenta]{session.permission_gate.mode.value.upper()}[/bold magenta] [dim](Use /perm to toggle manual approval)[/dim]\n"
             f"[bold cyan]⚙️ Mode:[/bold cyan] {mode.value.upper()}\n\n"
             f"[dim]Type your instructions to drive the target, or use slash commands:[/dim]\n"
             f"[dim]  /help           - View commands guide[/dim]\n"
+            f"[dim]  /target [args]  - Manage multi-window target pool (list, add, rm, switch)[/dim]\n"
+            f"[dim]  /export [path]  - Export replayable workflow (.py script or .yaml)[/dim]\n"
             f"[dim]  /resume [id]    - Resume a saved session or list available sessions[/dim]\n"
             f"[dim]  /steps [n]      - View or adjust max steps per turn[/dim]\n"
             f"[dim]  /perm [mode]    - Switch between 'auto' and 'manual'[/dim]\n"
-            f"[dim]  /target [query] - Switch to another window or screen[/dim]\n"
             f"[dim]  /clear          - Reset conversation memory[/dim]\n"
             f"[dim]  /status         - Show session state and diagnostics[/dim]\n"
             f"[dim]  /exit           - Exit session[/dim]",
@@ -618,12 +641,13 @@ def chat(
                 console.print(
                     Panel(
                         "[bold cyan]/help[/bold cyan]                - Display this help message\n"
+                        "[bold cyan]/target [query][/bold cyan]     - View, switch, add, or remove target windows\n"
+                        "[bold cyan]/export [file][/bold cyan]      - Export workflow (.py zero-LLM script or .yaml)\n"
                         "[bold cyan]/resume [id|latest][/bold cyan] - Resume a saved session or list available\n"
                         "[bold cyan]/steps [number][/bold cyan]     - View or adjust max step budget per turn\n"
                         "[bold cyan]/perm [auto|manual][/bold cyan] - Toggle or display permission level\n"
-                        "[bold cyan]/target <query>[/bold cyan]     - Switch target window/screen\n"
-                        "[bold cyan]/status[/bold cyan]              - Show session stats and viewport info\n"
-                        "[bold cyan]/clear[/bold cyan]               - Clear multi-turn history while keeping target\n"
+                        "[bold cyan]/status[/bold cyan]              - Show session stats, targets, and viewport info\n"
+                        "[bold cyan]/clear[/bold cyan]               - Clear multi-turn history while keeping targets\n"
                         "[bold cyan]/exit[/bold cyan]                - Exit dialogue session",
                         title="💡 Available Slash Commands",
                         border_style="cyan",
@@ -738,27 +762,119 @@ def chat(
                         f"Current permission mode: [bold magenta]{session.permission_gate.mode.value.upper()}[/bold magenta]"
                     )
 
-            elif cmd == "/target":
-                if arg:
-                    new_t = resolve_target(capturer.list_targets(), arg)
-                    if new_t:
-                        session.switch_target(new_t)
-                        selected = new_t
+            elif cmd in ("/target", "/targets"):
+                sub_parts = arg.split(maxsplit=1)
+                sub_cmd = sub_parts[0].lower() if sub_parts else ""
+                sub_arg = sub_parts[1].strip() if len(sub_parts) > 1 else ""
+
+                if not arg or sub_cmd == "list":
+                    from rich.table import Table
+
+                    table = Table(title="🪟 Session Multi-Window Target Pool")
+                    table.add_column("No.", justify="right", style="dim")
+                    table.add_column("Status", justify="center")
+                    table.add_column("Target ID", style="bold cyan")
+                    table.add_column("Title", style="green")
+                    table.add_column("Resolution")
+                    table.add_column("Process", style="dim")
+
+                    for i, t in enumerate(session.targets, 1):
+                        is_active = t.target_id == session.target.target_id
+                        status_str = (
+                            "[bold green]▶ ACTIVE[/bold green]"
+                            if is_active
+                            else "[dim]STANDBY[/dim]"
+                        )
+                        table.add_row(
+                            str(i),
+                            status_str,
+                            t.target_id,
+                            t.title[:30],
+                            f"{t.rect.width}x{t.rect.height}",
+                            t.process_name or "N/A",
+                        )
+                    console.print(table)
+                    console.print(
+                        "[dim]Commands: [cyan]/target <query>[/cyan], [cyan]/target switch <query>[/cyan], "
+                        "[cyan]/target add <query>[/cyan], [cyan]/target rm <query>[/cyan][/dim]"
+                    )
+
+                elif sub_cmd == "add":
+                    if not sub_arg:
                         console.print(
-                            f"[bold green]✓ Active target switched to: {new_t.title} ({new_t.target_id})[/bold green]"
+                            "[bold red]Usage: /target add <window_title_or_id>[/bold red]"
                         )
                     else:
+                        new_t = resolve_target(capturer.list_targets(), sub_arg)
+                        if new_t:
+                            session.add_target(new_t)
+                            console.print(
+                                f"[bold green]✓ Target added to session pool: '{new_t.title}' ({new_t.target_id})[/bold green]"
+                            )
+                        else:
+                            console.print(
+                                f"[bold red]❌ Target '{sub_arg}' could not be resolved from open windows.[/bold red]"
+                            )
+
+                elif sub_cmd in ("rm", "remove", "delete"):
+                    if not sub_arg:
                         console.print(
-                            f"[bold red]❌ Target query '{arg}' could not be resolved.[/bold red]"
+                            "[bold red]Usage: /target remove <window_title_or_id>[/bold red]"
                         )
+                    else:
+                        ok = session.remove_target(sub_arg)
+                        if ok:
+                            selected = session.target
+                            console.print(
+                                f"[bold green]✓ Target removed. Current active: '{session.target.title}'[/bold green]"
+                            )
+                        else:
+                            console.print(
+                                f"[bold red]❌ Cannot remove '{sub_arg}' (target not found or is the only window in session).[/bold red]"
+                            )
+
                 else:
-                    new_t = TargetSelector().interactive_select()
-                    if new_t:
-                        session.switch_target(new_t)
-                        selected = new_t
-                        console.print(
-                            f"[bold green]✓ Active target switched to: {new_t.title} ({new_t.target_id})[/bold green]"
-                        )
+                    query = sub_arg if sub_cmd == "switch" else arg
+                    new_t = session.switch_target(query)
+                    selected = session.target
+                    capturer.focus(selected)
+                    console.print(
+                        f"[bold green]✓ Active target switched to: '{selected.title}' ({selected.target_id})[/bold green]"
+                    )
+
+            elif cmd == "/export":
+                from pathlib import Path
+
+                from agenteverywhereflow.workflow import WorkflowExporter
+
+                wf_dir = Path.home() / ".aef" / "workflows"
+                wf_dir.mkdir(parents=True, exist_ok=True)
+                default_name = f"workflow_{session.session_id}"
+
+                wf = WorkflowExporter.from_session(session, name=default_name)
+                if not wf.steps:
+                    console.print(
+                        "[yellow]⚠️ No actions recorded in this session yet to export.[/yellow]"
+                    )
+                    continue
+
+                if arg:
+                    out_path = Path(arg.strip())
+                else:
+                    out_path = wf_dir / f"{default_name}.yaml"
+
+                if out_path.suffix.lower() == ".py":
+                    saved = WorkflowExporter.export_to_python(wf, out_path)
+                    console.print(
+                        f"[bold green]✓ Exported standalone zero-LLM Python script to:[/bold green] [cyan]{saved}[/cyan]"
+                    )
+                    console.print(f"[dim]Run directly with: [bold]python {saved}[/bold][/dim]")
+                else:
+                    saved = WorkflowExporter.export_to_yaml(wf, out_path)
+                    console.print(
+                        f"[bold green]✓ Exported declarative YAML workflow to:[/bold green] [cyan]{saved}[/cyan]"
+                    )
+                    console.print(f"[dim]Replay with: [bold]aef workflow play {saved}[/bold][/dim]")
 
             elif cmd in ("/clear", "/reset"):
                 session.reset_history()
@@ -768,13 +884,19 @@ def chat(
 
             elif cmd == "/status":
                 curr_steps = max_steps or config.max_steps
+                targets_status_str = f"{len(session.targets)} bound window(s):\n" + "\n".join(
+                    f"    - {t.title} [dim]({t.rect.width}x{t.rect.height}, {t.target_id}){' [ACTIVE]' if t.target_id == session.target.target_id else ''}[/dim]"
+                    for t in session.targets
+                )
                 console.print(
                     Panel(
                         f"[bold]Session ID:[/bold] {session.session_id}\n"
-                        f"[bold]Target:[/bold] {session.target.title} ({session.target.target_id})\n"
+                        f"[bold]Active Target:[/bold] {session.target.title} ({session.target.target_id})\n"
                         f"[bold]Resolution:[/bold] {session.target.rect.width}x{session.target.rect.height} at ({session.target.rect.x}, {session.target.rect.y})\n"
+                        f"[bold]Targets Pool:[/bold] {targets_status_str}\n"
                         f"[bold]Process:[/bold] {session.target.process_name or 'N/A'}\n"
                         f"[bold]Turns Completed:[/bold] {session.turn_count} | [bold]Total Steps:[/bold] {session.total_steps}\n"
+                        f"[bold]Recorded Replay Steps:[/bold] {len(session.recorded_steps)}\n"
                         f"[bold]Step Budget per Turn:[/bold] {curr_steps} steps [dim](Change with /steps <n>)[/dim]\n"
                         f"[bold]Permission:[/bold] {session.permission_gate.mode.value.upper()}\n"
                         f"[bold]Execution Mode:[/bold] {session.mode.value.upper()}\n"
@@ -991,6 +1113,164 @@ def export_session(
     console.print(
         f"[bold green]✓ Session '{session_id}' exported to {out_path.resolve()}[/bold green]"
     )
+
+
+# ---------------------------------------------------------------------------
+# Workflow Commands (zero-LLM replay and script generation)
+# ---------------------------------------------------------------------------
+workflow_app = typer.Typer(
+    name="workflow",
+    help="Record, export, and replay automated GUI workflows without LLM tokens.",
+)
+app.add_typer(workflow_app, name="workflow")
+
+
+@workflow_app.command(name="list")
+def list_workflows() -> None:
+    """List all saved workflows in ~/.aef/workflows/."""
+    from datetime import datetime
+    from pathlib import Path
+
+    import yaml
+    from rich.table import Table
+
+    wf_dir = Path.home() / ".aef" / "workflows"
+    if not wf_dir.exists():
+        console.print("[dim]No saved workflows found in ~/.aef/workflows/[/dim]")
+        return
+
+    files = sorted(
+        [f for f in wf_dir.iterdir() if f.is_file() and f.suffix in (".yaml", ".yml", ".py")],
+        key=lambda x: x.stat().st_mtime,
+        reverse=True,
+    )
+    if not files:
+        console.print("[dim]No saved workflows found in ~/.aef/workflows/[/dim]")
+        return
+
+    table = Table(title="⚡ AEFlow Automated Workflows (~/.aef/workflows/)")
+    table.add_column("Filename", style="bold cyan")
+    table.add_column("Format", style="magenta")
+    table.add_column("Workflow Name", style="green")
+    table.add_column("Steps", justify="right")
+    table.add_column("Targets", style="yellow")
+    table.add_column("Last Modified", style="dim")
+
+    for f in files:
+        mtime = datetime.fromtimestamp(f.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
+        fmt = f.suffix.lstrip(".").upper()
+        wf_name = f.stem
+        steps_count = "N/A"
+        targets_str = "N/A"
+
+        if f.suffix in (".yaml", ".yml"):
+            try:
+                with open(f, encoding="utf-8") as yf:
+                    data = yaml.safe_load(yf)
+                wf_name = data.get("name", f.stem)
+                steps_count = str(len(data.get("steps", [])))
+                tgts = [t.get("title", "") for t in data.get("targets", [])]
+                targets_str = ", ".join(t[:15] for t in tgts) if tgts else "None"
+            except Exception:
+                pass
+        elif f.suffix == ".py":
+            steps_count = "Script"
+            targets_str = "Python Replay"
+
+        table.add_row(f.name, fmt, wf_name[:24], steps_count, targets_str[:30], mtime)
+
+    console.print(table)
+    console.print("[dim]Replay with: [bold cyan]aef workflow play <filename>[/bold cyan][/dim]")
+
+
+@workflow_app.command(name="export")
+def export_workflow_cmd(
+    session_id: str = typer.Argument(..., help="Session ID to export"),
+    output: str | None = typer.Option(
+        None, "--output", "-o", help="Target output file path (.yaml or .py)"
+    ),
+    format: str = typer.Option(
+        "yaml",
+        "--format",
+        "-f",
+        help="Export format: 'yaml' (declarative) or 'py' (standalone script)",
+    ),
+) -> None:
+    """Export a saved session trajectory to a standalone Python script or YAML workflow."""
+    from pathlib import Path
+
+    from agenteverywhereflow.session import session_manager
+    from agenteverywhereflow.workflow import WorkflowExporter
+
+    session = session_manager.get_session(session_id) or session_manager.restore_session(session_id)
+    if not session:
+        console.print(f"[bold red]❌ Session '{session_id}' not found.[/bold red]")
+        raise typer.Exit(1)
+
+    wf = WorkflowExporter.from_session(session)
+    if not wf.steps:
+        console.print(f"[yellow]⚠️ No action steps recorded in session '{session_id}'.[/yellow]")
+        raise typer.Exit(0)
+
+    wf_dir = Path.home() / ".aef" / "workflows"
+    wf_dir.mkdir(parents=True, exist_ok=True)
+
+    fmt = format.lower().strip()
+    if output:
+        out_path = Path(output)
+    else:
+        ext = ".py" if fmt == "py" else ".yaml"
+        out_path = wf_dir / f"workflow_{session_id}{ext}"
+
+    if out_path.suffix.lower() == ".py" or fmt == "py":
+        saved = WorkflowExporter.export_to_python(wf, out_path)
+        console.print(
+            f"[bold green]✓ Standalone zero-LLM Python script exported to:[/bold green] [cyan]{saved.resolve()}[/cyan]"
+        )
+        console.print(f"[dim]Run directly with: [bold]python {saved}[/bold][/dim]")
+    else:
+        saved = WorkflowExporter.export_to_yaml(wf, out_path)
+        console.print(
+            f"[bold green]✓ Declarative YAML workflow exported to:[/bold green] [cyan]{saved.resolve()}[/cyan]"
+        )
+        console.print(f"[dim]Replay with: [bold]aef workflow play {saved}[/bold][/dim]")
+
+
+@workflow_app.command(name="play")
+def play_workflow_cmd(
+    workflow: str = typer.Argument(
+        ..., help="Path to workflow YAML file or name in ~/.aef/workflows/"
+    ),
+    speed: float = typer.Option(
+        1.0, "--speed", "-s", help="Playback speed multiplier (e.g. 1.5, 2.0)"
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Simulate replay without injecting actual input events"
+    ),
+) -> None:
+    """Replay an automated workflow deterministically with coordinate projection."""
+    from pathlib import Path
+
+    from agenteverywhereflow.workflow import WorkflowRunner
+
+    wf_path = Path(workflow)
+    if not wf_path.exists():
+        candidate = Path.home() / ".aef" / "workflows" / workflow
+        if candidate.exists():
+            wf_path = candidate
+        elif candidate.with_suffix(".yaml").exists():
+            wf_path = candidate.with_suffix(".yaml")
+        elif candidate.with_suffix(".yml").exists():
+            wf_path = candidate.with_suffix(".yml")
+
+    if not wf_path.exists():
+        console.print(f"[bold red]❌ Workflow file '{workflow}' not found.[/bold red]")
+        raise typer.Exit(1)
+
+    runner = WorkflowRunner(console=console)
+    res = runner.play(wf_path, speed=speed, dry_run=dry_run)
+    if not res.success:
+        raise typer.Exit(1)
 
 
 def main() -> None:

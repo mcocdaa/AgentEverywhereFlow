@@ -31,59 +31,101 @@ class PythonReplEngine(BaseExecutionEngine):
         except Exception:
             pass
 
-    def _build_context(self, target: TargetInfo) -> dict[str, Any]:
-        """Construct the sandbox globals injected into Python code."""
+    def _build_context(self, target: TargetInfo, **kwargs: Any) -> dict[str, Any]:
+        """Construct the sandbox globals injected into Python code with multi-target coordination."""
+        all_targets: list[TargetInfo] = kwargs.get("targets") or [target]
+        active_target_box = [target]
 
-        def _resolve_coords(x: float, y: float) -> tuple[int, int]:
+        def _resolve_target(target_arg: str | TargetInfo | None = None) -> TargetInfo:
+            if target_arg is None:
+                return active_target_box[0]
+            if isinstance(target_arg, TargetInfo):
+                return target_arg
+            query = str(target_arg).strip().lower()
+            # 1. Exact or prefix ID match
+            for t in all_targets:
+                if query == t.target_id.lower() or t.target_id.lower().startswith(query):
+                    return t
+            # 2. Substring match on title or process name
+            for t in all_targets:
+                if query in t.title.lower() or query in (t.process_name or "").lower():
+                    return t
+            return active_target_box[0]
+
+        def switch_to(target_query: str | TargetInfo) -> TargetInfo:
+            tgt = _resolve_target(target_query)
+            active_target_box[0] = tgt
+            self.capturer.focus(tgt)
+            self._print_action(
+                f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]switch_to[/bold cyan]({repr(str(target_query))}) "
+                f"[dim]──▶ Focused: '{tgt.title}' [ID: {tgt.target_id}][/dim]"
+            )
+            on_switch = kwargs.get("on_switch_target")
+            if on_switch:
+                on_switch(tgt)
+            return tgt
+
+        def _resolve_coords(x: float, y: float, tgt: TargetInfo) -> tuple[int, int]:
             return CoordinateProjector.to_screen_coords(
-                target=target,
+                target=tgt,
                 x=x,
                 y=y,
-                img_width=target.rect.width,
-                img_height=target.rect.height,
+                img_width=tgt.rect.width,
+                img_height=tgt.rect.height,
             )
 
-        def click(x: float, y: float, button: str = "left", clicks: int = 1) -> None:
-            sx, sy = _resolve_coords(x, y)
+        def click(
+            x: float,
+            y: float,
+            button: str = "left",
+            clicks: int = 1,
+            target: str | TargetInfo | None = None,
+        ) -> None:
+            tgt = switch_to(target) if target else active_target_box[0]
+            sx, sy = _resolve_coords(x, y, tgt)
             self._print_action(
                 f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]click[/bold cyan](x={int(x)}, y={int(y)}) "
-                f"[dim]──▶ Screen: ({sx}, {sy}) [button={button}, clicks={clicks}][/dim]"
+                f"[dim]──▶ Screen: ({sx}, {sy}) [button={button}, clicks={clicks}, window='{tgt.title}'][/dim]"
             )
             driver.click(
                 x=sx,
                 y=sy,
                 button=button,  # type: ignore
                 clicks=clicks,
-                window_handle=target.native_handle,
+                window_handle=tgt.native_handle,
                 window_rel_x=int(x),
                 window_rel_y=int(y),
             )
 
-        def move(x: float, y: float) -> None:
-            sx, sy = _resolve_coords(x, y)
+        def move(x: float, y: float, target: str | TargetInfo | None = None) -> None:
+            tgt = switch_to(target) if target else active_target_box[0]
+            sx, sy = _resolve_coords(x, y, tgt)
             self._print_action(
                 f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]move[/bold cyan](x={int(x)}, y={int(y)}) "
-                f"[dim]──▶ Screen: ({sx}, {sy})[/dim]"
+                f"[dim]──▶ Screen: ({sx}, {sy}) [window='{tgt.title}'][/dim]"
             )
             driver.move_to(x=sx, y=sy)
 
-        def double_click(x: float, y: float) -> None:
-            sx, sy = _resolve_coords(x, y)
+        def double_click(x: float, y: float, target: str | TargetInfo | None = None) -> None:
+            tgt = switch_to(target) if target else active_target_box[0]
+            sx, sy = _resolve_coords(x, y, tgt)
             self._print_action(
                 f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]double_click[/bold cyan](x={int(x)}, y={int(y)}) "
-                f"[dim]──▶ Screen: ({sx}, {sy})[/dim]"
+                f"[dim]──▶ Screen: ({sx}, {sy}) [window='{tgt.title}'][/dim]"
             )
-            driver.double_click(x=sx, y=sy, window_handle=target.native_handle)
+            driver.double_click(x=sx, y=sy, window_handle=tgt.native_handle)
 
-        def right_click(x: float, y: float) -> None:
-            sx, sy = _resolve_coords(x, y)
+        def right_click(x: float, y: float, target: str | TargetInfo | None = None) -> None:
+            tgt = switch_to(target) if target else active_target_box[0]
+            sx, sy = _resolve_coords(x, y, tgt)
             self._print_action(
                 f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]right_click[/bold cyan](x={int(x)}, y={int(y)}) "
-                f"[dim]──▶ Screen: ({sx}, {sy})[/dim]"
+                f"[dim]──▶ Screen: ({sx}, {sy}) [window='{tgt.title}'][/dim]"
             )
-            driver.right_click(x=sx, y=sy, window_handle=target.native_handle)
+            driver.right_click(x=sx, y=sy, window_handle=tgt.native_handle)
 
-        def type_text(text: str) -> None:
+        def type_text(text: str, target: str | TargetInfo | None = None) -> None:
+            tgt = switch_to(target) if target else active_target_box[0]
             method_desc = (
                 "Clipboard Injection (Ctrl+V)"
                 if (any(ord(c) > 127 for c in text) or sys.platform == "win32")
@@ -91,29 +133,37 @@ class PythonReplEngine(BaseExecutionEngine):
             )
             self._print_action(
                 f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]type_text[/bold cyan]({repr(text)}) "
-                f"[dim]──▶ Method: {method_desc}[/dim]"
+                f"[dim]──▶ Method: {method_desc} [window='{tgt.title}'][/dim]"
             )
-            driver.type_text(text, window_handle=target.native_handle)
+            driver.type_text(text, window_handle=tgt.native_handle)
 
-        def press(key: str) -> None:
+        def press(key: str, target: str | TargetInfo | None = None) -> None:
+            tgt = switch_to(target) if target else active_target_box[0]
             self._print_action(
-                f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]press[/bold cyan]({repr(key)})"
+                f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]press[/bold cyan]({repr(key)}) [dim][window='{tgt.title}'][/dim]"
             )
-            driver.press_key(key, window_handle=target.native_handle)
+            driver.press_key(key, window_handle=tgt.native_handle)
 
-        def hotkey(*keys: str) -> None:
+        def hotkey(*keys: str, target: str | TargetInfo | None = None) -> None:
+            tgt = switch_to(target) if target else active_target_box[0]
             self._print_action(
-                f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]hotkey[/bold cyan]({', '.join(repr(k) for k in keys)})"
+                f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]hotkey[/bold cyan]({', '.join(repr(k) for k in keys)}) [dim][window='{tgt.title}'][/dim]"
             )
-            driver.hotkey(*keys, window_handle=target.native_handle)
+            driver.hotkey(*keys, window_handle=tgt.native_handle)
 
-        def scroll(amount: int, x: float | None = None, y: float | None = None) -> None:
+        def scroll(
+            amount: int,
+            x: float | None = None,
+            y: float | None = None,
+            target: str | TargetInfo | None = None,
+        ) -> None:
+            tgt = switch_to(target) if target else active_target_box[0]
             pos_info = f" at ({x}, {y})" if x is not None and y is not None else ""
             self._print_action(
-                f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]scroll[/bold cyan](amount={amount}{pos_info})"
+                f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]scroll[/bold cyan](amount={amount}{pos_info}) [dim][window='{tgt.title}'][/dim]"
             )
             if x is not None and y is not None:
-                sx, sy = _resolve_coords(x, y)
+                sx, sy = _resolve_coords(x, y, tgt)
                 driver.scroll(amount, x=sx, y=sy)
             else:
                 driver.scroll(amount)
@@ -124,14 +174,18 @@ class PythonReplEngine(BaseExecutionEngine):
             )
             driver.wait(seconds)
 
-        def screenshot() -> Any:
+        def screenshot(target: str | TargetInfo | None = None) -> Any:
+            tgt = switch_to(target) if target else active_target_box[0]
             self._print_action(
-                "  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]screenshot[/bold cyan]()"
+                f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]screenshot[/bold cyan]() [dim][window='{tgt.title}'][/dim]"
             )
-            return self.capturer.capture(target)
+            return self.capturer.capture(tgt)
 
         return {
-            "target": target,
+            "target": active_target_box[0],
+            "targets": all_targets,
+            "switch_to": switch_to,
+            "focus": switch_to,
             "click": click,
             "move": move,
             "double_click": double_click,
@@ -156,7 +210,7 @@ class PythonReplEngine(BaseExecutionEngine):
                 lines = lines[:-1]
             code_str = "\n".join(lines).strip()
 
-        context = self._build_context(target)
+        context = self._build_context(target, **kwargs)
 
         # Redirect stdout and stderr
         old_stdout = sys.stdout
