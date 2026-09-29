@@ -172,6 +172,26 @@ AEF_DEFAULT_MODE=minimal
 
 ---
 
+### 🖥️ Companion Web Console: AgentEverywhereFlow-WebUI
+
+For users and teams seeking an interactive visual cockpit, check out the official companion dashboard:
+👉 **[AgentEverywhereFlow-WebUI](https://github.com/mcocdaa/AgentEverywhereFlow-WebUI)** (Universal SPA built with React 19, Tailwind CSS v4, and Vite).
+
+- 📺 **Viewport-Isolated Live Monitor** with real-time cursor coordinate projection HUD and action ripple markers.
+- 💬 **Multi-Turn Interaction Stream** with collapsible Chain-of-Thought (CoT) and high-visibility CodeAct blocks.
+- 🛡️ **Human-in-the-Loop Security Gate** with one-click approval / rejection of OS input injections.
+- 📦 **One-Click Workflow Export** to standalone, zero-LLM Python replay scripts.
+
+```bash
+# 1. Start headless backend daemon
+aef serve --host 127.0.0.1 --port 8000
+
+# 2. In AgentEverywhereFlow-WebUI:
+pnpm dev   # Opens studio console at http://localhost:5173
+```
+
+---
+
 ## 🕹️ CLI Usage
 
 ```bash
@@ -184,20 +204,20 @@ aef list-targets
 # 3. Summon agent by Window Title substring
 aef run --target "Chrome" --task "Search for GitHub Trending repositories"
 
-# 4. Summon agent by Target ID or Native HWND (Precision targeting)
-aef run --target hwnd:0x409dc --task "帮我过一下人机验证"
+# 4. Multi-target cross-window continuous conversation
+aef chat --target "Chrome,Excel" --permission manual
 
-# 5. Summon agent onto an entire physical display
-aef run --target display:1 --task "Organize desktop icons"
-
-# 6. Multi-turn Interactive Dialogue Session (Continuous conversation + slash commands)
-aef chat --target "Chrome" --permission manual
-
-# 7. Launch REST & WebSocket Dialogue Service Daemon (Swagger: http://localhost:8000/docs)
+# 5. Launch REST & WebSocket Dialogue Service Daemon (Swagger: http://localhost:8000/docs)
 aef serve --host 127.0.0.1 --port 8000
 
-# 8. Run with step diagnostics and debug logging
-aef run --target "Excel" --task "Calculate total" --debug
+# 6. Replay recorded workflow with zero LLM API calls (deterministic playback)
+aef workflow play ~/.aef/workflows/sales_pipeline.yaml --speed 1.5
+
+# 7. Resume previous saved session
+aef chat --resume latest
+
+# 8. Check for updates and self-upgrade
+aef update
 
 # 9. View current configuration
 aef config

@@ -171,6 +171,26 @@ AEF_DEFAULT_MODE=minimal
 
 ---
 
+### 🖥️ 独立 Web 控制台配套项目：AgentEverywhereFlow-WebUI
+
+对于希望拥有沉浸式可视化交互驾驶舱的用户与团队，推荐使用官方独立前端伴侣：
+👉 **[AgentEverywhereFlow-WebUI](https://github.com/mcocdaa/AgentEverywhereFlow-WebUI)**（基于 React 19、Tailwind CSS v4 与 Vite 打造的现代纯纯 Web 控制台）。
+
+- 📺 **像素级精准视口隔离监控**：实时光标相对坐标 HUD (`(X, Y)`) 与雷达波纹动作指示。
+- 💬 **连续多轮对话流**：清晰区分操作者意图、可折叠思维链 (CoT) 与高保真 CodeAct 执行回执。
+- 🛡️ **Human-in-the-Loop 安全门禁**：在受控模式下实时拦截物理输入注入，支持一键批准或带有指导说明的驳回。
+- 📦 **零 Token 零 API 独立脚本导出**：一键导出为纯 Python 原生执行重放脚本。
+
+```bash
+# 1. 启动无头后端服务守护进程
+aef serve --host 127.0.0.1 --port 8000
+
+# 2. 在 AgentEverywhereFlow-WebUI 目录中启动前端：
+pnpm dev   # 浏览器打开 http://localhost:5173
+```
+
+---
+
 ## 🕹️ CLI 常用命令
 
 ```bash
@@ -183,20 +203,20 @@ aef list-targets
 # 3. 按窗口标题关键字匹配召唤
 aef run --target "Chrome" --task "帮我在页面里搜索最近的 GitHub Trending 项目"
 
-# 4. 按 Target ID 或 16进制 HWND 精确召唤（杜绝窗口同名歧义）
-aef run --target hwnd:0x409dc --task "帮我过一下人机验证"
+# 4. 跨应用多窗口协同交互对话（一次绑定多个窗口，如 Chrome 与 Excel）
+aef chat --target "Chrome,Excel" --permission manual
 
-# 5. 直接投屏整个物理显示器
-aef run --target display:1 --task "整理桌面图标并排列窗口"
-
-# 6. 多轮交互式对话模式（保持会话记忆，支持 /perm 动态审批切换与 /target 热换窗口）
-aef chat --target "Chrome" --permission manual
-
-# 7. 启动后台对话服务守护进程（提供 REST API + 实时双向 WebSocket，内置 Swagger: http://localhost:8000/docs）
+# 5. 启动后台对话服务守护进程（提供 REST API + 实时双向 WebSocket，内置 Swagger: http://localhost:8000/docs）
 aef serve --host 127.0.0.1 --port 8000
 
-# 8. 开启 Debug 诊断模式运行（打印实时 Token 消耗、状态诊断与逐步截图）
-aef run --target "Excel" --task "计算总金额" --debug
+# 6. 零大模型调用、零 Token 消耗的高速确定性重放录制工作流
+aef workflow play ~/.aef/workflows/sales_pipeline.yaml --speed 1.5
+
+# 7. 断点续跑历史会话
+aef chat --resume latest
+
+# 8. 检查并一键在线自更新升级
+aef update
 
 # 9. 查看当前生效的完整配置
 aef config

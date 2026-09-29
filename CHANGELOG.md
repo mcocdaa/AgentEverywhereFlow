@@ -27,6 +27,11 @@
     - 支持命令 `aef workflow play <workflow.yaml> [--speed 1.5] [--dry-run]`。
     - 运行时自动重构绑定当前操作系统桌面上的窗口视口，自适应坐标映射与回放速度缩放。
   - 对话内快捷导出命令 `/export [filename.py | filename.yaml]`，默认保存至 `~/.aef/workflows/`。
+- **独立 Web 控制台生态配套与文档架构全面完善 (WebUI & Integration Ecosystem)**：
+  - 正式发布独立现代控制台前端项目 **[AgentEverywhereFlow-WebUI](https://github.com/mcocdaa/AgentEverywhereFlow-WebUI)**（基于 React 19 + TypeScript + Tailwind CSS v4 + Vite）。
+  - 核心后端与 Web 控制台完全解耦：通过 `aef serve` 输出规范 REST 与 WebSocket 接口，实现视口画面实时推流、光标相对坐标 HUD 映射、雷达波纹动作动画与人工安全审批门禁。
+  - 新增 `docs/webui_and_integration.md` 与 `docs/multi_target_and_workflow.md`，深度梳理集成通信协议与跨窗口协作机制。
+  - 引入 Antigravity AI 专家技能 `aeflow-dev`（位于 `.agents/skills/aeflow-dev/` 与全局技能库），实现 AI Coding Agent 自动加载 AEF 视口隔离契约、排障手册与测试流水线。
 - **自更新与编码鲁棒性优化**：
   - 自更新逻辑修复，解决 Windows 环境下 `gbk` 解码异常与 `uv tool` 升级链路问题。
 
