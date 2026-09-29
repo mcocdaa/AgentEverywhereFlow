@@ -1149,7 +1149,7 @@ def list_workflows() -> None:
         return
 
     table = Table(title="⚡ AEFlow Automated Workflows (~/.aef/workflows/)")
-    table.add_column("Filename", style="bold cyan")
+    table.add_column("Filename", style="bold cyan", no_wrap=True)
     table.add_column("Format", style="magenta")
     table.add_column("Workflow Name", style="green")
     table.add_column("Steps", justify="right")
