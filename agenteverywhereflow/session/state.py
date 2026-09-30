@@ -14,6 +14,7 @@ class SessionState(StrEnum):
     RUNNING = "running"
     WAITING_APPROVAL = "waiting_approval"
     WAITING_INPUT = "waiting_input"
+    ABORTED = "aborted"
     ERROR = "error"
     CLOSED = "closed"
 
@@ -31,6 +32,7 @@ class SessionEventType(StrEnum):
     ACTION_EXECUTED = "action_executed"
     STEP_FINISHED = "step_finished"
     TASK_COMPLETED = "task_completed"
+    ABORTED = "aborted"
     ERROR = "error"
 
 

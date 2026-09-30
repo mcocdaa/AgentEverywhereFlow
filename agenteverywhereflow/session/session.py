@@ -91,6 +91,7 @@ class ChatSession:
         self._approval_event = threading.Event()
         self._approval_decision: ApprovalDecision | None = None
         self._approval_lock = threading.Lock()
+        self._abort_requested = threading.Event()
 
         # Event listeners for streaming / UI updates
         self.listeners: list[Callable[[SessionEvent], None]] = []
@@ -460,12 +461,24 @@ class ChatSession:
             self._approval_event.set()
             return True
 
+    def abort(self) -> bool:
+        """Signal the running turn to immediately abort execution."""
+        self._abort_requested.set()
+        with self._approval_lock:
+            if self.pending_approval is not None:
+                self._approval_decision = ApprovalDecision(
+                    approved=False, reason="Aborted by operator"
+                )
+                self._approval_event.set()
+        return True
+
     def execute_turn(
         self,
         user_instruction: str,
         max_steps: int | None = None,
     ) -> TurnResult:
         """Execute a conversational dialogue turn against the target."""
+        self._abort_requested.clear()
         effective_max_steps = max_steps if max_steps is not None else self.config.max_steps
         self.turn_count += 1
         self.state = SessionState.RUNNING
@@ -491,6 +504,27 @@ class ChatSession:
         turn_steps = 0
 
         while turn_steps < effective_max_steps:
+            if self._abort_requested.is_set():
+                logger.info(
+                    "Session %s turn %d aborted by operator before step %d.",
+                    self.session_id,
+                    self.turn_count,
+                    turn_steps + 1,
+                )
+                self.state = SessionState.IDLE
+                self.emit_event(
+                    SessionEventType.ABORTED,
+                    step=turn_steps,
+                    payload={"message": "Execution aborted by operator."},
+                )
+                return TurnResult(
+                    success=False,
+                    completed=False,
+                    response="Execution aborted by operator.",
+                    steps_executed=turn_steps,
+                    error="Execution aborted by operator.",
+                )
+
             turn_steps += 1
             self.total_steps += 1
 
@@ -588,6 +622,7 @@ class ChatSession:
             )
 
             # 4. Reason with LLM or custom planner
+            raw_thinking = ""
             if self.planner_func:
                 try:
                     assistant_text = self.planner_func(self.messages, self.target, turn_steps)
@@ -608,7 +643,13 @@ class ChatSession:
                         messages=self.messages,  # type: ignore[arg-type]
                         temperature=0.2,
                     )
-                    assistant_text = response.choices[0].message.content or ""
+                    choice = response.choices[0]
+                    assistant_text = choice.message.content or ""
+                    raw_thinking = (
+                        getattr(choice.message, "reasoning_content", None)
+                        or getattr(choice.message, "reasoning", None)
+                        or ""
+                    )
 
                     # Extract Token usage and KV cache hit metrics
                     usage = getattr(response, "usage", None)
@@ -641,11 +682,30 @@ class ChatSession:
                         error=err_msg,
                     )
 
+            # Determine structured reasoning / CoT
+            thinking_text = ""
+            if raw_thinking:
+                thinking_text = str(raw_thinking).strip()
+            elif "<think>" in assistant_text and "</think>" in assistant_text:
+                think_match = re.search(r"<think>(.*?)</think>", assistant_text, re.DOTALL)
+                if think_match:
+                    thinking_text = think_match.group(1).strip()
+
+            if not thinking_text:
+                if is_minimal:
+                    parts = re.split(r"```(?:python)?\s*.*?\s*```", assistant_text, flags=re.DOTALL)
+                    outside = "\n".join(p.strip() for p in parts if p.strip()).strip()
+                    thinking_text = outside or assistant_text
+                else:
+                    parts = re.split(r"```(?:json)?\s*.*?\s*```", assistant_text, flags=re.DOTALL)
+                    outside = "\n".join(p.strip() for p in parts if p.strip()).strip()
+                    thinking_text = outside or assistant_text
+
             self.messages.append({"role": "assistant", "content": assistant_text})
             self.emit_event(
                 SessionEventType.REASONING,
                 step=turn_steps,
-                payload={"content": assistant_text},
+                payload={"thinking": thinking_text, "content": assistant_text},
             )
 
             # 5. Extract and Validate Actions
@@ -724,8 +784,30 @@ class ChatSession:
                             "success": result.success,
                             "output": result.output,
                             "error": result.error,
+                            "tool_calls": result.data.get("tool_calls", []),
                         },
                     )
+
+                    if self._abort_requested.is_set():
+                        logger.info(
+                            "Session %s turn %d aborted by operator after action in step %d.",
+                            self.session_id,
+                            self.turn_count,
+                            turn_steps,
+                        )
+                        self.state = SessionState.IDLE
+                        self.emit_event(
+                            SessionEventType.ABORTED,
+                            step=turn_steps,
+                            payload={"message": "Execution aborted by operator."},
+                        )
+                        return TurnResult(
+                            success=False,
+                            completed=False,
+                            response="Execution aborted by operator.",
+                            steps_executed=turn_steps,
+                            error="Execution aborted by operator.",
+                        )
 
                     feedback = (
                         f"Action execution result: success={result.success}\n"
@@ -834,6 +916,27 @@ class ChatSession:
                             "error": result.error,
                         },
                     )
+
+                    if self._abort_requested.is_set():
+                        logger.info(
+                            "Session %s turn %d aborted by operator after action in step %d.",
+                            self.session_id,
+                            self.turn_count,
+                            turn_steps,
+                        )
+                        self.state = SessionState.IDLE
+                        self.emit_event(
+                            SessionEventType.ABORTED,
+                            step=turn_steps,
+                            payload={"message": "Execution aborted by operator."},
+                        )
+                        return TurnResult(
+                            success=False,
+                            completed=False,
+                            response="Execution aborted by operator.",
+                            steps_executed=turn_steps,
+                            error="Execution aborted by operator.",
+                        )
 
                     feedback = (
                         f"Action execution result: success={result.success}\n"

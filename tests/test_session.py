@@ -8,7 +8,7 @@ from PIL import Image
 from agenteverywhereflow.capturer.base import Rect, TargetInfo, TargetType
 from agenteverywhereflow.config import ExecutionMode, PermissionMode
 from agenteverywhereflow.security.permission import ApprovalDecision, ApprovalRequest
-from agenteverywhereflow.session import ChatSession, SessionManager, SessionState
+from agenteverywhereflow.session import ChatSession, SessionEventType, SessionManager, SessionState
 
 
 def _make_dummy_target(name: str = "Test Window") -> TargetInfo:
@@ -235,3 +235,33 @@ def test_chat_session_max_steps_limit() -> None:
     assert res.steps_executed == 3
     assert "Step limit reached" in res.response
     assert session.state == SessionState.WAITING_INPUT
+
+
+def test_chat_session_abort_execution() -> None:
+    """Verify that abort() stops an in-progress execution turn immediately."""
+    target = _make_dummy_target("Abort Target")
+
+    events_received = []
+
+    def abort_triggering_planner(messages: list[dict[str, Any]], tgt: TargetInfo, step: int) -> str:
+        session.abort()
+        return "Executing action before abort.\n```python\nwait(0.01)\n```"
+
+    session = ChatSession(
+        target=target,
+        mode=ExecutionMode.MINIMAL_PYTHON,
+        permission_mode=PermissionMode.AUTO,
+        planner_func=abort_triggering_planner,
+    )
+    session.capturer.capture = MagicMock(return_value=Image.new("RGB", (100, 100), color="white"))
+    session.capturer.focus = MagicMock()
+    session.add_listener(events_received.append)
+
+    res = session.execute_turn("Test instruction", max_steps=10)
+    assert res.success is False
+    assert res.completed is False
+    assert "aborted" in (res.error or "").lower()
+    assert session.state == SessionState.IDLE
+
+    has_aborted_event = any(e.event_type == SessionEventType.ABORTED for e in events_received)
+    assert has_aborted_event is True

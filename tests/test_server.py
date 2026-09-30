@@ -119,12 +119,17 @@ def test_server_session_lifecycle() -> None:
         assert msg_data["success"] is True
         assert msg_data["completed"] is True
 
-        # 6. Reset History
+        # 6. Abort endpoint
+        abort_resp = client.post("/api/v1/sessions/test-srv-session/abort")
+        assert abort_resp.status_code == 200
+        assert abort_resp.json()["status"] == "ok"
+
+        # 7. Reset History
         reset_resp = client.post("/api/v1/sessions/test-srv-session/reset")
         assert reset_resp.status_code == 200
         assert reset_resp.json()["status"] == "ok"
 
-        # 7. Delete Session
+        # 8. Delete Session
         del_resp = client.delete("/api/v1/sessions/test-srv-session")
         assert del_resp.status_code == 200
         assert len(session_manager.list_sessions()) == 0

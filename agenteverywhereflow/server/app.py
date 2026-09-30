@@ -429,6 +429,15 @@ def create_app() -> FastAPI:
         session.reset_history()
         return {"status": "ok", "message": "Session conversation history cleared."}
 
+    @app.post("/api/v1/sessions/{session_id}/abort")
+    def abort_session(session_id: str) -> dict[str, Any]:
+        """Abort active turn execution immediately for this session."""
+        session = session_manager.get_session(session_id)
+        if not session:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+        session.abort()
+        return {"status": "ok", "message": f"Session '{session_id}' aborted."}
+
     @app.get("/api/v1/sessions/{session_id}/screenshot")
     def get_screenshot(session_id: str) -> Response:
         """Capture and stream current target viewport screenshot."""
@@ -495,6 +504,8 @@ def create_app() -> FastAPI:
                         args=(instruction, max_steps),
                         daemon=True,
                     ).start()
+                elif action == "abort":
+                    session.abort()
                 elif action == "approval":
                     approved = bool(data.get("approved", True))
                     reason = data.get("reason")

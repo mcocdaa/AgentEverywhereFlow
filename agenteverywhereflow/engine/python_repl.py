@@ -35,6 +35,12 @@ class PythonReplEngine(BaseExecutionEngine):
         """Construct the sandbox globals injected into Python code with multi-target coordination."""
         all_targets: list[TargetInfo] = kwargs.get("targets") or [target]
         active_target_box = [target]
+        tool_log_cb = kwargs.get("tool_log_callback")
+
+        def _log(rich_text: str, plain_text: str) -> None:
+            self._print_action(rich_text)
+            if tool_log_cb:
+                tool_log_cb(plain_text)
 
         def _resolve_target(target_arg: str | TargetInfo | None = None) -> TargetInfo:
             if target_arg is None:
@@ -56,9 +62,10 @@ class PythonReplEngine(BaseExecutionEngine):
             tgt = _resolve_target(target_query)
             active_target_box[0] = tgt
             self.capturer.focus(tgt)
-            self._print_action(
+            _log(
                 f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]switch_to[/bold cyan]({repr(str(target_query))}) "
-                f"[dim]──▶ Focused: '{tgt.title}' [ID: {tgt.target_id}][/dim]"
+                f"[dim]──▶ Focused: '{tgt.title}' [ID: {tgt.target_id}][/dim]",
+                f"⚡ [Tool Call] switch_to({repr(str(target_query))}) ──▶ Focused: '{tgt.title}' [ID: {tgt.target_id}]",
             )
             on_switch = kwargs.get("on_switch_target")
             if on_switch:
@@ -83,9 +90,10 @@ class PythonReplEngine(BaseExecutionEngine):
         ) -> None:
             tgt = switch_to(target) if target else active_target_box[0]
             sx, sy = _resolve_coords(x, y, tgt)
-            self._print_action(
+            _log(
                 f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]click[/bold cyan](x={int(x)}, y={int(y)}) "
-                f"[dim]──▶ Screen: ({sx}, {sy}) [button={button}, clicks={clicks}, window='{tgt.title}'][/dim]"
+                f"[dim]──▶ Screen: ({sx}, {sy}) [button={button}, clicks={clicks}, window='{tgt.title}'][/dim]",
+                f"⚡ [Tool Call] click(x={int(x)}, y={int(y)}) ──▶ Screen: ({sx}, {sy}) [button={button}, clicks={clicks}, window='{tgt.title}']",
             )
             driver.click(
                 x=sx,
@@ -100,27 +108,30 @@ class PythonReplEngine(BaseExecutionEngine):
         def move(x: float, y: float, target: str | TargetInfo | None = None) -> None:
             tgt = switch_to(target) if target else active_target_box[0]
             sx, sy = _resolve_coords(x, y, tgt)
-            self._print_action(
+            _log(
                 f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]move[/bold cyan](x={int(x)}, y={int(y)}) "
-                f"[dim]──▶ Screen: ({sx}, {sy}) [window='{tgt.title}'][/dim]"
+                f"[dim]──▶ Screen: ({sx}, {sy}) [window='{tgt.title}'][/dim]",
+                f"⚡ [Tool Call] move(x={int(x)}, y={int(y)}) ──▶ Screen: ({sx}, {sy}) [window='{tgt.title}']",
             )
             driver.move_to(x=sx, y=sy)
 
         def double_click(x: float, y: float, target: str | TargetInfo | None = None) -> None:
             tgt = switch_to(target) if target else active_target_box[0]
             sx, sy = _resolve_coords(x, y, tgt)
-            self._print_action(
+            _log(
                 f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]double_click[/bold cyan](x={int(x)}, y={int(y)}) "
-                f"[dim]──▶ Screen: ({sx}, {sy}) [window='{tgt.title}'][/dim]"
+                f"[dim]──▶ Screen: ({sx}, {sy}) [window='{tgt.title}'][/dim]",
+                f"⚡ [Tool Call] double_click(x={int(x)}, y={int(y)}) ──▶ Screen: ({sx}, {sy}) [window='{tgt.title}']",
             )
             driver.double_click(x=sx, y=sy, window_handle=tgt.native_handle)
 
         def right_click(x: float, y: float, target: str | TargetInfo | None = None) -> None:
             tgt = switch_to(target) if target else active_target_box[0]
             sx, sy = _resolve_coords(x, y, tgt)
-            self._print_action(
+            _log(
                 f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]right_click[/bold cyan](x={int(x)}, y={int(y)}) "
-                f"[dim]──▶ Screen: ({sx}, {sy}) [window='{tgt.title}'][/dim]"
+                f"[dim]──▶ Screen: ({sx}, {sy}) [window='{tgt.title}'][/dim]",
+                f"⚡ [Tool Call] right_click(x={int(x)}, y={int(y)}) ──▶ Screen: ({sx}, {sy}) [window='{tgt.title}']",
             )
             driver.right_click(x=sx, y=sy, window_handle=tgt.native_handle)
 
@@ -131,23 +142,26 @@ class PythonReplEngine(BaseExecutionEngine):
                 if (any(ord(c) > 127 for c in text) or sys.platform == "win32")
                 else "Keyboard Emulation"
             )
-            self._print_action(
+            _log(
                 f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]type_text[/bold cyan]({repr(text)}) "
-                f"[dim]──▶ Method: {method_desc} [window='{tgt.title}'][/dim]"
+                f"[dim]──▶ Method: {method_desc} [window='{tgt.title}'][/dim]",
+                f"⚡ [Tool Call] type_text({repr(text)}) ──▶ Method: {method_desc} [window='{tgt.title}']",
             )
             driver.type_text(text, window_handle=tgt.native_handle)
 
         def press(key: str, target: str | TargetInfo | None = None) -> None:
             tgt = switch_to(target) if target else active_target_box[0]
-            self._print_action(
-                f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]press[/bold cyan]({repr(key)}) [dim][window='{tgt.title}'][/dim]"
+            _log(
+                f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]press[/bold cyan]({repr(key)}) [dim][window='{tgt.title}'][/dim]",
+                f"⚡ [Tool Call] press({repr(key)}) [window='{tgt.title}']",
             )
             driver.press_key(key, window_handle=tgt.native_handle)
 
         def hotkey(*keys: str, target: str | TargetInfo | None = None) -> None:
             tgt = switch_to(target) if target else active_target_box[0]
-            self._print_action(
-                f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]hotkey[/bold cyan]({', '.join(repr(k) for k in keys)}) [dim][window='{tgt.title}'][/dim]"
+            _log(
+                f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]hotkey[/bold cyan]({', '.join(repr(k) for k in keys)}) [dim][window='{tgt.title}'][/dim]",
+                f"⚡ [Tool Call] hotkey({', '.join(repr(k) for k in keys)}) [window='{tgt.title}']",
             )
             driver.hotkey(*keys, window_handle=tgt.native_handle)
 
@@ -159,8 +173,9 @@ class PythonReplEngine(BaseExecutionEngine):
         ) -> None:
             tgt = switch_to(target) if target else active_target_box[0]
             pos_info = f" at ({x}, {y})" if x is not None and y is not None else ""
-            self._print_action(
-                f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]scroll[/bold cyan](amount={amount}{pos_info}) [dim][window='{tgt.title}'][/dim]"
+            _log(
+                f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]scroll[/bold cyan](amount={amount}{pos_info}) [dim][window='{tgt.title}'][/dim]",
+                f"⚡ [Tool Call] scroll(amount={amount}{pos_info}) [window='{tgt.title}']",
             )
             if x is not None and y is not None:
                 sx, sy = _resolve_coords(x, y, tgt)
@@ -169,15 +184,17 @@ class PythonReplEngine(BaseExecutionEngine):
                 driver.scroll(amount)
 
         def wait(seconds: float) -> None:
-            self._print_action(
-                f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]wait[/bold cyan]({seconds}s)"
+            _log(
+                f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]wait[/bold cyan]({seconds}s)",
+                f"⚡ [Tool Call] wait({seconds}s)",
             )
             driver.wait(seconds)
 
         def screenshot(target: str | TargetInfo | None = None) -> Any:
             tgt = switch_to(target) if target else active_target_box[0]
-            self._print_action(
-                f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]screenshot[/bold cyan]() [dim][window='{tgt.title}'][/dim]"
+            _log(
+                f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]screenshot[/bold cyan]() [dim][window='{tgt.title}'][/dim]",
+                f"⚡ [Tool Call] screenshot() [window='{tgt.title}']",
             )
             return self.capturer.capture(tgt)
 
@@ -210,7 +227,8 @@ class PythonReplEngine(BaseExecutionEngine):
                 lines = lines[:-1]
             code_str = "\n".join(lines).strip()
 
-        context = self._build_context(target, **kwargs)
+        tool_logs: list[str] = []
+        context = self._build_context(target, tool_log_callback=tool_logs.append, **kwargs)
 
         # Redirect stdout and stderr
         old_stdout = sys.stdout
@@ -241,5 +259,5 @@ class PythonReplEngine(BaseExecutionEngine):
             success=success,
             output=output_str.strip(),
             error=error_msg,
-            data={"executed_code": code_str},
+            data={"executed_code": code_str, "tool_calls": tool_logs},
         )
