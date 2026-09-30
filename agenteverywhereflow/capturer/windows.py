@@ -53,6 +53,50 @@ class WindowsCapturer(BaseCapturer):
             except Exception:
                 pass
 
+    @staticmethod
+    def get_window_bounds(hwnd: int) -> tuple[int, int, int, int]:
+        """Return (x, y, width, height) of the window using DWM extended frame bounds.
+
+        Eliminates the 7-14px invisible shadow margin introduced by Win32 GetWindowRect on Windows 10/11.
+        """
+        if not is_windows or not hwnd:
+            return (0, 0, 800, 600)
+
+        # 1. Restored placement if minimized
+        try:
+            if win32gui.IsIconic(hwnd):
+                placement = win32gui.GetWindowPlacement(hwnd)
+                norm = placement[4]
+                return (norm[0], norm[1], max(1, norm[2] - norm[0]), max(1, norm[3] - norm[1]))
+        except Exception:
+            pass
+
+        # 2. DWM extended frame bounds (exact visual window rectangle)
+        try:
+            rect = wintypes.RECT()
+            DWMWA_EXTENDED_FRAME_BOUNDS = 9
+            hr = ctypes.windll.dwmapi.DwmGetWindowAttribute(
+                hwnd,
+                DWMWA_EXTENDED_FRAME_BOUNDS,
+                ctypes.byref(rect),
+                ctypes.sizeof(rect),
+            )
+            if hr == 0:
+                w = max(1, rect.right - rect.left)
+                h = max(1, rect.bottom - rect.top)
+                return (rect.left, rect.top, w, h)
+        except Exception:
+            pass
+
+        # 3. Fallback to standard GetWindowRect
+        try:
+            rect_raw = win32gui.GetWindowRect(hwnd)
+            w = max(1, rect_raw[2] - rect_raw[0])
+            h = max(1, rect_raw[3] - rect_raw[1])
+            return (rect_raw[0], rect_raw[1], w, h)
+        except Exception:
+            return (0, 0, 800, 600)
+
     def list_targets(
         self, include_displays: bool = True, include_windows: bool = True
     ) -> list[TargetInfo]:
@@ -125,23 +169,7 @@ class WindowsCapturer(BaseCapturer):
                 return True
 
             is_minimized = bool(win32gui.IsIconic(hwnd))
-
-            # Extract window rect (use restored placement rectangle if minimized)
-            if is_minimized:
-                try:
-                    placement = win32gui.GetWindowPlacement(hwnd)
-                    norm_rect = placement[4]  # (left, top, right, bottom)
-                    width = norm_rect[2] - norm_rect[0]
-                    height = norm_rect[3] - norm_rect[1]
-                    rect_raw = norm_rect
-                except Exception:
-                    rect_raw = win32gui.GetWindowRect(hwnd)
-                    width = rect_raw[2] - rect_raw[0]
-                    height = rect_raw[3] - rect_raw[1]
-            else:
-                rect_raw = win32gui.GetWindowRect(hwnd)
-                width = rect_raw[2] - rect_raw[0]
-                height = rect_raw[3] - rect_raw[1]
+            x, y, width, height = self.get_window_bounds(hwnd)
 
             # Filter out zero-size or off-screen invisible handles
             if width <= 30 or height <= 30:
@@ -179,7 +207,7 @@ class WindowsCapturer(BaseCapturer):
                     target_type=TargetType.WINDOW,
                     title=title,
                     process_name=proc_name,
-                    rect=Rect(x=rect_raw[0], y=rect_raw[1], width=width, height=height),
+                    rect=Rect(x=x, y=y, width=width, height=height),
                     is_minimized=is_minimized,
                     native_handle=hwnd,
                 )
@@ -201,10 +229,12 @@ class WindowsCapturer(BaseCapturer):
             if win32gui.IsIconic(hwnd):
                 win32gui.ShowWindow(hwnd, win32con.SW_SHOWNOACTIVATE)
 
-            # Update latest bounding rectangle
-            rect_raw = win32gui.GetWindowRect(hwnd)
-            width = max(1, rect_raw[2] - rect_raw[0])
-            height = max(1, rect_raw[3] - rect_raw[1])
+            # Update latest bounding rectangle dynamically
+            x, y, width, height = self.get_window_bounds(hwnd)
+            target.rect.x = x
+            target.rect.y = y
+            target.rect.width = width
+            target.rect.height = height
 
             # Try native PrintWindow with PW_RENDERFULLCONTENT (captures even if occluded)
             try:
@@ -241,7 +271,7 @@ class WindowsCapturer(BaseCapturer):
             except Exception:
                 pass  # Fall back to mss rect capture
 
-            return self._capture_rect(Rect(rect_raw[0], rect_raw[1], width, height))
+            return self._capture_rect(Rect(x, y, width, height))
 
         return self._capture_rect(target.rect)
 

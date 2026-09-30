@@ -192,6 +192,7 @@ class InputDriver:
                     win32api.mouse_event(up_flag, 0, 0, 0, 0)
                     time.sleep(0.015)
 
+                time.sleep(0.03)
                 if orig_pos is not None:
                     try:
                         win32api.SetCursorPos(orig_pos)
@@ -388,20 +389,29 @@ class InputDriver:
 
         has_unicode = any(ord(c) > 127 for c in text)
         # Use clipboard paste for unicode/Chinese or Windows to bypass IME interference
-        if has_unicode or sys.platform == "win32":
+        if sys.platform == "win32":
             try:
                 import pyperclip
+                import win32api
+                import win32con
                 from rich.console import Console
 
                 from agenteverywhereflow.config import config
 
                 pyperclip.copy(text)
-                time.sleep(0.04)
+                time.sleep(0.03)
                 if config.debug:
                     Console(file=sys.__stdout__).print(
-                        f"[dim magenta]    [DEBUG-WIN32] Clipboard text set ({len(text)} chars) -> backend.hotkey('ctrl', 'v')[/dim magenta]"
+                        f"[dim magenta]    [DEBUG-WIN32] Clipboard text set ({len(text)} chars) -> win32 keybd_event(Ctrl+V)[/dim magenta]"
                     )
-                backend.hotkey("ctrl", "v")
+                # Native Windows keybd_event for Ctrl+V
+                win32api.keybd_event(win32con.VK_CONTROL, 0, 0, 0)
+                time.sleep(0.015)
+                win32api.keybd_event(ord("V"), 0, 0, 0)
+                time.sleep(0.02)
+                win32api.keybd_event(ord("V"), 0, win32con.KEYEVENTF_KEYUP, 0)
+                time.sleep(0.015)
+                win32api.keybd_event(win32con.VK_CONTROL, 0, win32con.KEYEVENTF_KEYUP, 0)
                 time.sleep(0.04)
                 return
             except Exception as e:
@@ -411,8 +421,20 @@ class InputDriver:
 
                 if config.debug:
                     Console(file=sys.__stdout__).print(
-                        f"[bold red]    [DEBUG-WIN32] Clipboard paste failed: {e}, falling back to backend.write[/bold red]"
+                        f"[bold red]    [DEBUG-WIN32] Native Ctrl+V paste failed: {e}, falling back to backend.hotkey[/bold red]"
                     )
+
+        if has_unicode:
+            try:
+                import pyperclip
+
+                pyperclip.copy(text)
+                time.sleep(0.04)
+                backend.hotkey("ctrl", "v")
+                time.sleep(0.04)
+                return
+            except Exception:
+                pass
 
         try:
             backend.write(text, interval=interval)
