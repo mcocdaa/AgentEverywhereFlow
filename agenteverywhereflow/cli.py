@@ -148,6 +148,39 @@ def update(
     if uv_path:
         console.print(f"[bold yellow]Updating via 'uv tool' to {target_ref} ...[/bold yellow]")
         install_target = f"git+https://github.com/mcocdaa/AgentEverywhereFlow.git@{target_ref}"
+
+        # On Windows, running binaries cannot be directly overwritten by uv tool copy (WinError 32).
+        # Renaming the running aef.exe allows uv to write a fresh aef.exe without conflict.
+        renamed_backups: list[tuple[Path, Path]] = []
+        if sys.platform == "win32":
+            import os
+            import uuid
+
+            candidates: set[Path] = set()
+            which_aef = shutil.which("aef")
+            if which_aef:
+                candidates.add(Path(which_aef))
+            candidates.add(Path.home() / ".local" / "bin" / "aef.exe")
+            candidates.add(Path(sys.executable).parent / "aef.exe")
+
+            for cand in candidates:
+                if cand.is_file():
+                    try:
+                        for old_f in cand.parent.glob("aef_*.old"):
+                            try:
+                                old_f.unlink()
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
+
+                    backup = cand.with_name(f"aef_{os.getpid()}_{uuid.uuid4().hex[:6]}.old")
+                    try:
+                        cand.rename(backup)
+                        renamed_backups.append((cand, backup))
+                    except Exception:
+                        pass
+
         cmd = [uv_path, "tool", "install", "--force", "--reinstall", install_target]
         try:
             res = subprocess.run(
@@ -162,51 +195,137 @@ def update(
                 console.print(
                     f"[bold green]✓ Successfully updated to {target_ref} via uv tool![/bold green]\n{msg}"
                 )
+                for _orig, bak in renamed_backups:
+                    try:
+                        bak.unlink(missing_ok=True)
+                    except Exception:
+                        pass
                 return
             else:
                 err_msg = res.stderr.strip() or res.stdout.strip()
                 console.print(f"[yellow]⚠️ uv tool install failed: {err_msg}[/yellow]")
+
+                # Try 'uv tool upgrade agenteverywhereflow' as an alternative
+                console.print("[dim]Attempting alternative 'uv tool upgrade' ...[/dim]")
+                res_upg = subprocess.run(
+                    [uv_path, "tool", "upgrade", "agenteverywhereflow"],
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                )
+                if res_upg.returncode == 0:
+                    console.print(
+                        f"[bold green]✓ Successfully upgraded to {target_ref} via uv tool upgrade![/bold green]"
+                    )
+                    for _orig, bak in renamed_backups:
+                        try:
+                            bak.unlink(missing_ok=True)
+                        except Exception:
+                            pass
+                    return
+
+                # If failed, restore backups
+                for orig, bak in renamed_backups:
+                    if not orig.exists() and bak.exists():
+                        try:
+                            bak.rename(orig)
+                        except Exception:
+                            pass
+
+                if sys.platform == "win32" and (
+                    "os error 32" in err_msg or "进程无法访问" in err_msg
+                ):
+                    console.print(
+                        "[bold yellow]💡 Windows Tip: If running inside an active 'aef' process, run this in PowerShell after exiting:[/bold yellow]\n"
+                        f"   [bold cyan]uv tool install --force --reinstall {install_target}[/bold cyan]\n"
+                        "   [dim]or[/dim]\n"
+                        "   [bold cyan]uv tool upgrade agenteverywhereflow[/bold cyan]"
+                    )
         except Exception as e:
             console.print(f"[dim]uv tool error: {e}[/dim]")
+            for orig, bak in renamed_backups:
+                if not orig.exists() and bak.exists():
+                    try:
+                        bak.rename(orig)
+                    except Exception:
+                        pass
 
-    # 3. Fallback to pip
+    # 3. Fallback to pip or uv pip
     pip_exe = shutil.which("pip") or shutil.which("pip3")
-    pip_cmd: list[str]
-    if pip_exe:
-        pip_cmd = [
-            pip_exe,
-            "install",
-            "--upgrade",
-            f"git+https://github.com/mcocdaa/AgentEverywhereFlow.git@{target_ref}",
-        ]
-    else:
-        pip_cmd = [
-            sys.executable,
-            "-m",
-            "pip",
-            "install",
-            "--upgrade",
-            f"git+https://github.com/mcocdaa/AgentEverywhereFlow.git@{target_ref}",
-        ]
-
-    try:
-        console.print(f"[bold yellow]Updating via pip to {target_ref} ...[/bold yellow]")
-        res_pip = subprocess.run(
-            pip_cmd,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-        )
-        if res_pip.returncode == 0:
-            console.print(
-                f"[bold green]✓ Successfully updated to {target_ref} via pip![/bold green]"
+    has_pip = bool(pip_exe)
+    if not has_pip:
+        try:
+            chk = subprocess.run(
+                [sys.executable, "-m", "pip", "--version"],
+                capture_output=True,
+                text=True,
             )
-            return
-        else:
-            console.print(f"[bold red]❌ Pip update failed: {res_pip.stderr.strip()}[/bold red]")
-    except Exception as e:
-        console.print(f"[bold red]❌ Update failed: {e}[/bold red]")
+            has_pip = chk.returncode == 0
+        except Exception:
+            has_pip = False
+
+    if has_pip:
+        pip_cmd = (
+            [
+                pip_exe,
+                "install",
+                "--upgrade",
+                f"git+https://github.com/mcocdaa/AgentEverywhereFlow.git@{target_ref}",
+            ]
+            if pip_exe
+            else [
+                sys.executable,
+                "-m",
+                "pip",
+                "install",
+                "--upgrade",
+                f"git+https://github.com/mcocdaa/AgentEverywhereFlow.git@{target_ref}",
+            ]
+        )
+        try:
+            console.print(f"[bold yellow]Updating via pip to {target_ref} ...[/bold yellow]")
+            res_pip = subprocess.run(
+                pip_cmd,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+            if res_pip.returncode == 0:
+                console.print(
+                    f"[bold green]✓ Successfully updated to {target_ref} via pip![/bold green]"
+                )
+                return
+            else:
+                console.print(
+                    f"[bold red]❌ Pip update failed: {res_pip.stderr.strip()}[/bold red]"
+                )
+        except Exception as e:
+            console.print(f"[bold red]❌ Pip error: {e}[/bold red]")
+    elif uv_path:
+        try:
+            console.print(f"[bold yellow]Updating via uv pip to {target_ref} ...[/bold yellow]")
+            res_uv_pip = subprocess.run(
+                [
+                    uv_path,
+                    "pip",
+                    "install",
+                    "--upgrade",
+                    f"git+https://github.com/mcocdaa/AgentEverywhereFlow.git@{target_ref}",
+                ],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+            if res_uv_pip.returncode == 0:
+                console.print(
+                    f"[bold green]✓ Successfully updated to {target_ref} via uv pip![/bold green]"
+                )
+                return
+        except Exception as e:
+            console.print(f"[dim]uv pip fallback error: {e}[/dim]")
 
 
 # Register 'upgrade' as alias for 'update'
@@ -954,6 +1073,37 @@ def chat(
             )
 
 
+def _check_port_available(host: str, port: int) -> tuple[bool, str]:
+    """Check if (host, port) is free to bind. Returns (is_free, occupant_description)."""
+    import socket
+
+    test_host = "127.0.0.1" if host in ("0.0.0.0", "", "localhost") else host
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        try:
+            s.bind((test_host, port))
+            return True, ""
+        except OSError:
+            pass
+
+    occupant_info = ""
+    try:
+        import psutil
+
+        for conn in psutil.net_connections(kind="inet"):
+            if conn.laddr and conn.laddr.port == port and conn.status == psutil.CONN_LISTEN:
+                if conn.pid:
+                    try:
+                        proc = psutil.Process(conn.pid)
+                        occupant_info = f"PID {conn.pid} ({proc.name()})"
+                    except Exception:
+                        occupant_info = f"PID {conn.pid}"
+                break
+    except Exception:
+        pass
+
+    return False, occupant_info
+
+
 @app.command(name="serve")
 def serve(
     host: str = typer.Option(
@@ -972,6 +1122,28 @@ def serve(
     bind_host = host or config.server_host
     bind_port = port or config.server_port
 
+    is_free, occupant = _check_port_available(bind_host, bind_port)
+    if not is_free:
+        occ_str = f" by [bold cyan]{occupant}[/bold cyan]" if occupant else ""
+        console.print(
+            Panel(
+                f"[bold red]❌ Port {bind_port} is already in use{occ_str}![/bold red]\n\n"
+                f"[bold yellow]Common Causes & Solutions:[/bold yellow]\n"
+                f"• A previous 'aef serve' daemon or another web server is already running on port {bind_port}.\n\n"
+                f"[bold green]Option 1: Launch on a different port[/bold green]\n"
+                f"   [cyan]aef serve --port {bind_port + 1}[/cyan]\n\n"
+                f"[bold green]Option 2: Terminate the occupying process on Windows (PowerShell)[/bold green]\n"
+                f"   [dim]# Find process:[/dim] [cyan]Get-NetTCPConnection -LocalPort {bind_port} | Select-Object LocalPort, OwningProcess, State[/cyan]\n"
+                f"   [dim]# Stop by PID:[/dim] [cyan]Stop-Process -Id <PID> -Force[/cyan]\n"
+                f"   [dim]# Or kill lingering python daemons:[/dim] [cyan]taskkill /F /IM python.exe[/cyan]\n\n"
+                f"[bold green]Option 3: Terminate the occupying process on Linux / macOS[/bold green]\n"
+                f"   [cyan]lsof -ti :{bind_port} | xargs kill -9[/cyan]",
+                title="⚠️ Port Conflict (WinError 10048 / Address Already in Use)",
+                border_style="red",
+            )
+        )
+        raise typer.Exit(code=1)
+
     console.print(
         Panel(
             f"[bold green]🚀 AgentEverywhereFlow Dialogue Service Daemon[/bold green]\n\n"
@@ -984,13 +1156,22 @@ def serve(
         )
     )
 
-    uvicorn.run(
-        "agenteverywhereflow.server.app:create_app",
-        host=bind_host,
-        port=bind_port,
-        factory=True,
-        reload=reload,
-    )
+    try:
+        uvicorn.run(
+            "agenteverywhereflow.server.app:create_app",
+            host=bind_host,
+            port=bind_port,
+            factory=True,
+            reload=reload,
+        )
+    except OSError as e:
+        if "10048" in str(e) or "already in use" in str(e).lower():
+            console.print(
+                f"[bold red]❌ Error binding to {bind_host}:{bind_port}: Port already in use.[/bold red]\n"
+                f"[yellow]Try specifying another port: [cyan]aef serve --port {bind_port + 1}[/cyan][/yellow]"
+            )
+            raise typer.Exit(code=1) from None
+        raise
 
 
 session_app = typer.Typer(
