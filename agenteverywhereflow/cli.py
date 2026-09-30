@@ -149,37 +149,31 @@ def update(
         console.print(f"[bold yellow]Updating via 'uv tool' to {target_ref} ...[/bold yellow]")
         install_target = f"git+https://github.com/mcocdaa/AgentEverywhereFlow.git@{target_ref}"
 
-        # On Windows, running binaries cannot be directly overwritten by uv tool copy (WinError 32).
-        # Renaming the running aef.exe allows uv to write a fresh aef.exe without conflict.
-        renamed_backups: list[tuple[Path, Path]] = []
+        # On Windows, ~/.local/bin/aef.exe is actively executing this process and locked by Windows kernel (os error 32).
+        # Upgrading the uv tool's isolated Python environment directly via `uv pip install --python sys.executable`
+        # updates all package code, wheels, and dependencies smoothly without attempting to overwrite the locked launcher shim.
         if sys.platform == "win32":
-            import os
-            import uuid
-
-            candidates: set[Path] = set()
-            which_aef = shutil.which("aef")
-            if which_aef:
-                candidates.add(Path(which_aef))
-            candidates.add(Path.home() / ".local" / "bin" / "aef.exe")
-            candidates.add(Path(sys.executable).parent / "aef.exe")
-
-            for cand in candidates:
-                if cand.is_file():
-                    try:
-                        for old_f in cand.parent.glob("aef_*.old"):
-                            try:
-                                old_f.unlink()
-                            except Exception:
-                                pass
-                    except Exception:
-                        pass
-
-                    backup = cand.with_name(f"aef_{os.getpid()}_{uuid.uuid4().hex[:6]}.old")
-                    try:
-                        cand.rename(backup)
-                        renamed_backups.append((cand, backup))
-                    except Exception:
-                        pass
+            res_pip = subprocess.run(
+                [
+                    uv_path,
+                    "pip",
+                    "install",
+                    "--python",
+                    sys.executable,
+                    "--upgrade",
+                    "--refresh",
+                    install_target,
+                ],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+            if res_pip.returncode == 0:
+                console.print(
+                    f"[bold green]✓ Successfully updated to {target_ref} via uv![/bold green]"
+                )
+                return
 
         cmd = [uv_path, "tool", "install", "--force", "--reinstall", install_target]
         try:
@@ -195,14 +189,21 @@ def update(
                 console.print(
                     f"[bold green]✓ Successfully updated to {target_ref} via uv tool![/bold green]\n{msg}"
                 )
-                for _orig, bak in renamed_backups:
-                    try:
-                        bak.unlink(missing_ok=True)
-                    except Exception:
-                        pass
                 return
             else:
                 err_msg = res.stderr.strip() or res.stdout.strip()
+                # On Windows, if packages were upgraded and only the locked entrypoint copy failed (os error 32)
+                if sys.platform == "win32" and (
+                    "os error 32" in err_msg or "进程无法访问" in err_msg
+                ):
+                    combined_output = f"{res.stdout}\n{res.stderr}"
+                    if "Installed" in combined_output or "+ agenteverywhereflow" in combined_output:
+                        console.print(
+                            f"[bold green]✓ Successfully updated to {target_ref} via uv tool![/bold green]\n"
+                            "[dim](Package libraries upgraded; active entrypoint shim preserved)[/dim]"
+                        )
+                        return
+
                 console.print(f"[yellow]⚠️ uv tool install failed: {err_msg}[/yellow]")
 
                 # Try 'uv tool upgrade agenteverywhereflow' as an alternative
@@ -218,20 +219,7 @@ def update(
                     console.print(
                         f"[bold green]✓ Successfully upgraded to {target_ref} via uv tool upgrade![/bold green]"
                     )
-                    for _orig, bak in renamed_backups:
-                        try:
-                            bak.unlink(missing_ok=True)
-                        except Exception:
-                            pass
                     return
-
-                # If failed, restore backups
-                for orig, bak in renamed_backups:
-                    if not orig.exists() and bak.exists():
-                        try:
-                            bak.rename(orig)
-                        except Exception:
-                            pass
 
                 if sys.platform == "win32" and (
                     "os error 32" in err_msg or "进程无法访问" in err_msg
@@ -244,12 +232,6 @@ def update(
                     )
         except Exception as e:
             console.print(f"[dim]uv tool error: {e}[/dim]")
-            for orig, bak in renamed_backups:
-                if not orig.exists() and bak.exists():
-                    try:
-                        bak.rename(orig)
-                    except Exception:
-                        pass
 
     # 3. Fallback to pip or uv pip
     pip_exe = shutil.which("pip") or shutil.which("pip3")
