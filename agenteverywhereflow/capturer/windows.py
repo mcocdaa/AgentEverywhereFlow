@@ -197,9 +197,9 @@ class WindowsCapturer(BaseCapturer):
         # Window capture
         if is_windows and target.native_handle:
             hwnd = target.native_handle
-            # If minimized, restore it
+            # If minimized, restore without stealing active focus
             if win32gui.IsIconic(hwnd):
-                win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
+                win32gui.ShowWindow(hwnd, win32con.SW_SHOWNOACTIVATE)
 
             # Update latest bounding rectangle
             rect_raw = win32gui.GetWindowRect(hwnd)

@@ -261,8 +261,7 @@ class ChatSession:
         self.total_steps = 0
 
     def capture_frame(self) -> Image.Image:
-        """Capture live viewport frame of the target."""
-        self.capturer.focus(self.target)
+        """Capture live viewport frame of the target without altering window focus."""
         return self.capturer.capture(self.target)
 
     def _encode_image(self, img: Image.Image) -> str:
@@ -534,10 +533,7 @@ class ChatSession:
                 payload={"status": "step_start", "total_steps": self.total_steps},
             )
 
-            # 1. Bring target window into focus
-            self.capturer.focus(self.target)
-
-            # 2. Capture screenshot(s) and build visual observation
+            # 1. Capture screenshot(s) and build visual observation
             if len(self.targets) <= 1:
                 try:
                     img = self.capturer.capture(self.target)
