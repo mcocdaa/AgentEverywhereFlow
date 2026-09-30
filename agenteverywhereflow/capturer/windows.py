@@ -75,7 +75,7 @@ class WindowsCapturer(BaseCapturer):
         try:
             rect = wintypes.RECT()
             DWMWA_EXTENDED_FRAME_BOUNDS = 9
-            hr = ctypes.windll.dwmapi.DwmGetWindowAttribute(
+            hr = ctypes.windll.dwmapi.DwmGetWindowAttribute(  # type: ignore[attr-defined]
                 hwnd,
                 DWMWA_EXTENDED_FRAME_BOUNDS,
                 ctypes.byref(rect),
@@ -231,10 +231,7 @@ class WindowsCapturer(BaseCapturer):
 
             # Update latest bounding rectangle dynamically
             x, y, width, height = self.get_window_bounds(hwnd)
-            target.rect.x = x
-            target.rect.y = y
-            target.rect.width = width
-            target.rect.height = height
+            target.rect = Rect(x=x, y=y, width=width, height=height)
 
             # Try native PrintWindow with PW_RENDERFULLCONTENT (captures even if occluded)
             try:
