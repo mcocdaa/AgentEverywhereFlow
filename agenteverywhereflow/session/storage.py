@@ -207,6 +207,8 @@ class SessionStorage:
 
     def list_sessions(self) -> list[SessionMetadata]:
         """List all saved sessions sorted by most recently updated."""
+        if not self.base_dir.exists():
+            return []
         records: list[SessionMetadata] = []
         for item in self.base_dir.iterdir():
             if item.is_dir() and (item / "meta.json").exists():

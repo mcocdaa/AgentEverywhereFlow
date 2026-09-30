@@ -278,9 +278,24 @@ def create_app() -> FastAPI:
             "state": session.state.value,
         }
 
+    def _resolve_session(session_id: str) -> Any:
+        """Retrieve an active session from memory or restore a persisted session from disk."""
+        return session_manager.get_session(session_id) or session_manager.restore_session(
+            session_id
+        )
+
     @app.get("/api/v1/sessions")
     def list_sessions() -> list[dict[str, Any]]:
-        """List all active dialogue sessions."""
+        """List all active dialogue sessions (including persisted sessions from disk)."""
+        active = session_manager.list_sessions()
+        active_ids = {s.session_id for s in active}
+        for meta in session_manager.list_all_stored():
+            if meta.session_id not in active_ids:
+                restored = session_manager.restore_session(meta.session_id)
+                if restored:
+                    active.append(restored)
+                    active_ids.add(restored.session_id)
+
         return [
             {
                 "session_id": s.session_id,
@@ -292,13 +307,13 @@ def create_app() -> FastAPI:
                 "turn_count": s.turn_count,
                 "total_steps": s.total_steps,
             }
-            for s in session_manager.list_sessions()
+            for s in active
         ]
 
     @app.get("/api/v1/sessions/{session_id}")
     def get_session(session_id: str) -> dict[str, Any]:
         """Get state and metadata for a specific session."""
-        session = session_manager.get_session(session_id)
+        session = _resolve_session(session_id)
         if not session:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
 
@@ -333,7 +348,7 @@ def create_app() -> FastAPI:
         background_tasks: BackgroundTasks,
     ) -> Any:
         """Send an instruction to the dialogue session."""
-        session = session_manager.get_session(session_id)
+        session = _resolve_session(session_id)
         if not session:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
 
@@ -357,7 +372,7 @@ def create_app() -> FastAPI:
     @app.get("/api/v1/sessions/{session_id}/approval")
     def get_pending_approval(session_id: str) -> dict[str, Any] | None:
         """Fetch pending approval request for session if waiting."""
-        session = session_manager.get_session(session_id)
+        session = _resolve_session(session_id)
         if not session:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
         if not session.pending_approval:
@@ -367,7 +382,7 @@ def create_app() -> FastAPI:
     @app.post("/api/v1/sessions/{session_id}/approval")
     def submit_approval(session_id: str, req: SubmitApprovalRequest) -> dict[str, Any]:
         """Approve or reject a pending action in manual permission mode."""
-        session = session_manager.get_session(session_id)
+        session = _resolve_session(session_id)
         if not session:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
 
@@ -383,7 +398,7 @@ def create_app() -> FastAPI:
     @app.post("/api/v1/sessions/{session_id}/permission")
     def update_permission(session_id: str, req: UpdatePermissionRequest) -> dict[str, Any]:
         """Toggle session permission mode (auto or manual)."""
-        session = session_manager.get_session(session_id)
+        session = _resolve_session(session_id)
         if not session:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
 
@@ -398,7 +413,7 @@ def create_app() -> FastAPI:
     @app.post("/api/v1/sessions/{session_id}/target")
     def switch_target(session_id: str, req: SwitchTargetRequest) -> dict[str, Any]:
         """Switch target window or screen for this session."""
-        session = session_manager.get_session(session_id)
+        session = _resolve_session(session_id)
         if not session:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
 
@@ -423,7 +438,7 @@ def create_app() -> FastAPI:
     @app.post("/api/v1/sessions/{session_id}/reset")
     def reset_session(session_id: str) -> dict[str, Any]:
         """Reset conversation context while keeping target window."""
-        session = session_manager.get_session(session_id)
+        session = _resolve_session(session_id)
         if not session:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
         session.reset_history()
@@ -432,7 +447,7 @@ def create_app() -> FastAPI:
     @app.post("/api/v1/sessions/{session_id}/abort")
     def abort_session(session_id: str) -> dict[str, Any]:
         """Abort active turn execution immediately for this session."""
-        session = session_manager.get_session(session_id)
+        session = _resolve_session(session_id)
         if not session:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
         session.abort()
@@ -441,7 +456,7 @@ def create_app() -> FastAPI:
     @app.get("/api/v1/sessions/{session_id}/screenshot")
     def get_screenshot(session_id: str) -> Response:
         """Capture and stream current target viewport screenshot."""
-        session = session_manager.get_session(session_id)
+        session = _resolve_session(session_id)
         if not session:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
 
@@ -462,7 +477,7 @@ def create_app() -> FastAPI:
     @app.delete("/api/v1/sessions/{session_id}")
     def delete_session(session_id: str) -> dict[str, Any]:
         """Terminate and remove a dialogue session."""
-        success = session_manager.close_session(session_id)
+        success = session_manager.close_session(session_id, delete_storage=True)
         if not success:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
         return {"status": "ok", "message": f"Session '{session_id}' closed."}
@@ -470,12 +485,19 @@ def create_app() -> FastAPI:
     @app.websocket("/api/v1/sessions/{session_id}/ws")
     async def session_websocket(websocket: WebSocket, session_id: str) -> None:
         """Bidirectional WebSocket for real-time events, streaming reasoning, and approvals."""
-        session = session_manager.get_session(session_id)
-        if not session:
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-            return
-
         await websocket.accept()
+        session = _resolve_session(session_id)
+        if not session:
+            await websocket.send_json(
+                {
+                    "session_id": session_id,
+                    "event_type": "error",
+                    "step": 0,
+                    "payload": {"error": f"Session '{session_id}' not found."},
+                }
+            )
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Session not found")
+            return
         event_queue: asyncio.Queue[SessionEvent] = asyncio.Queue()
         loop = asyncio.get_running_loop()
 
