@@ -2,6 +2,7 @@
 
 import asyncio
 import io
+import logging
 import threading
 from typing import Any
 
@@ -17,7 +18,9 @@ from agenteverywhereflow.config import ExecutionMode
 from agenteverywhereflow.security.permission import ApprovalDecision, PermissionMode
 from agenteverywhereflow.server.webui import get_webui_dist_path, get_webui_status
 from agenteverywhereflow.session.manager import session_manager
-from agenteverywhereflow.session.state import SessionEvent
+from agenteverywhereflow.session.state import SessionEvent, SessionEventType, SessionState
+
+logger = logging.getLogger(__name__)
 
 
 # Request & Response Schemas
@@ -355,7 +358,20 @@ def create_app() -> FastAPI:
         if req.async_execution:
             # Run in thread pool to not block event loop
             def run_turn() -> None:
-                session.execute_turn(req.instruction, max_steps=req.max_steps)
+                try:
+                    session.execute_turn(req.instruction, max_steps=req.max_steps)
+                except Exception as exc:
+                    logger.exception(
+                        "Unhandled exception during execute_turn in session %s: %s",
+                        session_id,
+                        exc,
+                    )
+                    session.state = SessionState.ERROR
+                    session.emit_event(
+                        SessionEventType.ERROR,
+                        step=session.turn_count,
+                        payload={"error": f"Internal execution error: {exc}"},
+                    )
 
             thread = threading.Thread(target=run_turn, daemon=True)
             thread.start()

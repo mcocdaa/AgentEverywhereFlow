@@ -286,6 +286,15 @@ class WindowsCapturer(BaseCapturer):
                     )
 
                 if fore_hwnd != hwnd:
+                    # Windows Alt-key tap trick to unlock SetForegroundWindow permissions
+                    try:
+                        import win32api
+
+                        win32api.keybd_event(win32con.VK_MENU, 0, 0, 0)
+                        win32api.keybd_event(win32con.VK_MENU, 0, win32con.KEYEVENTF_KEYUP, 0)
+                    except Exception:
+                        pass
+
                     fore_thread, _ = win32process.GetWindowThreadProcessId(fore_hwnd)
                     cur_thread = win32process.GetCurrentThreadId()
                     target_thread, _ = win32process.GetWindowThreadProcessId(hwnd)

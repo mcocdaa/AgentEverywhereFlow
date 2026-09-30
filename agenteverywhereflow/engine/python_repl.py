@@ -89,6 +89,7 @@ class PythonReplEngine(BaseExecutionEngine):
             target: str | TargetInfo | None = None,
         ) -> None:
             tgt = switch_to(target) if target else active_target_box[0]
+            self.capturer.focus(tgt)
             sx, sy = _resolve_coords(x, y, tgt)
             _log(
                 f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]click[/bold cyan](x={int(x)}, y={int(y)}) "
@@ -117,6 +118,7 @@ class PythonReplEngine(BaseExecutionEngine):
 
         def double_click(x: float, y: float, target: str | TargetInfo | None = None) -> None:
             tgt = switch_to(target) if target else active_target_box[0]
+            self.capturer.focus(tgt)
             sx, sy = _resolve_coords(x, y, tgt)
             _log(
                 f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]double_click[/bold cyan](x={int(x)}, y={int(y)}) "
@@ -127,6 +129,7 @@ class PythonReplEngine(BaseExecutionEngine):
 
         def right_click(x: float, y: float, target: str | TargetInfo | None = None) -> None:
             tgt = switch_to(target) if target else active_target_box[0]
+            self.capturer.focus(tgt)
             sx, sy = _resolve_coords(x, y, tgt)
             _log(
                 f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]right_click[/bold cyan](x={int(x)}, y={int(y)}) "
@@ -137,6 +140,7 @@ class PythonReplEngine(BaseExecutionEngine):
 
         def type_text(text: str, target: str | TargetInfo | None = None) -> None:
             tgt = switch_to(target) if target else active_target_box[0]
+            self.capturer.focus(tgt)
             method_desc = (
                 "Clipboard Injection (Ctrl+V)"
                 if (any(ord(c) > 127 for c in text) or sys.platform == "win32")
@@ -151,6 +155,7 @@ class PythonReplEngine(BaseExecutionEngine):
 
         def press(key: str, target: str | TargetInfo | None = None) -> None:
             tgt = switch_to(target) if target else active_target_box[0]
+            self.capturer.focus(tgt)
             _log(
                 f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]press[/bold cyan]({repr(key)}) [dim][window='{tgt.title}'][/dim]",
                 f"⚡ [Tool Call] press({repr(key)}) [window='{tgt.title}']",
@@ -159,6 +164,7 @@ class PythonReplEngine(BaseExecutionEngine):
 
         def hotkey(*keys: str, target: str | TargetInfo | None = None) -> None:
             tgt = switch_to(target) if target else active_target_box[0]
+            self.capturer.focus(tgt)
             _log(
                 f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]hotkey[/bold cyan]({', '.join(repr(k) for k in keys)}) [dim][window='{tgt.title}'][/dim]",
                 f"⚡ [Tool Call] hotkey({', '.join(repr(k) for k in keys)}) [window='{tgt.title}']",
@@ -172,6 +178,7 @@ class PythonReplEngine(BaseExecutionEngine):
             target: str | TargetInfo | None = None,
         ) -> None:
             tgt = switch_to(target) if target else active_target_box[0]
+            self.capturer.focus(tgt)
             pos_info = f" at ({x}, {y})" if x is not None and y is not None else ""
             _log(
                 f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]scroll[/bold cyan](amount={amount}{pos_info}) [dim][window='{tgt.title}'][/dim]",

@@ -8,6 +8,7 @@ from rich.prompt import Confirm
 
 from agenteverywhereflow.actions.coords import CoordinateProjector
 from agenteverywhereflow.actions.driver import driver
+from agenteverywhereflow.capturer import get_capturer
 from agenteverywhereflow.capturer.base import TargetInfo
 from agenteverywhereflow.config import config
 from agenteverywhereflow.engine.base import BaseExecutionEngine, ExecutionResult
@@ -17,6 +18,7 @@ class GuardedActionEngine(BaseExecutionEngine):
     """Executes atomic, strictly validated tool calls with permission gates."""
 
     def __init__(self) -> None:
+        self.capturer = get_capturer()
         self.console = Console(file=sys.__stdout__ or sys.stdout)
 
     def _print_action(self, text: str) -> None:
@@ -88,6 +90,7 @@ class GuardedActionEngine(BaseExecutionEngine):
                 )
 
             elif action == "click":
+                self.capturer.focus(act_target)
                 x = float(payload.get("x", 0))
                 y = float(payload.get("y", 0))
                 button = payload.get("button", "left")
@@ -132,6 +135,7 @@ class GuardedActionEngine(BaseExecutionEngine):
                 return ExecutionResult(success=True, output=f"Moved to ({sx}, {sy})")
 
             elif action == "type":
+                self.capturer.focus(act_target)
                 text = str(payload.get("text", ""))
                 method_desc = (
                     "Clipboard Injection (Ctrl+V)"
@@ -146,6 +150,7 @@ class GuardedActionEngine(BaseExecutionEngine):
                 return ExecutionResult(success=True, output=f"Typed text: {text}")
 
             elif action == "press":
+                self.capturer.focus(act_target)
                 key = str(payload.get("key", ""))
                 self._print_action(
                     f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]press[/bold cyan]({repr(key)}) [dim][window='{act_target.title}'][/dim]"
@@ -154,6 +159,7 @@ class GuardedActionEngine(BaseExecutionEngine):
                 return ExecutionResult(success=True, output=f"Pressed key: {key}")
 
             elif action == "hotkey":
+                self.capturer.focus(act_target)
                 keys = payload.get("keys", [])
                 self._print_action(
                     f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]hotkey[/bold cyan]({', '.join(repr(k) for k in keys)}) [dim][window='{act_target.title}'][/dim]"
@@ -162,6 +168,7 @@ class GuardedActionEngine(BaseExecutionEngine):
                 return ExecutionResult(success=True, output=f"Sent hotkey: {keys}")
 
             elif action == "scroll":
+                self.capturer.focus(act_target)
                 amount = int(payload.get("amount", 0))
                 gx = payload.get("x")
                 gy = payload.get("y")

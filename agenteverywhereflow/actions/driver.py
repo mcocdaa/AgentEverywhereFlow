@@ -83,6 +83,7 @@ class InputDriver:
         window_handle: int = 0,
         window_rel_x: int = 0,
         window_rel_y: int = 0,
+        restore_cursor: bool = True,
     ) -> None:
         """Perform mouse click at (x, y) or via direct window handle event."""
         # 1. Linux direct window handle event injection
@@ -146,9 +147,16 @@ class InputDriver:
                 import win32api
                 import win32con
 
+                orig_pos = None
+                if restore_cursor:
+                    try:
+                        orig_pos = win32api.GetCursorPos()
+                    except Exception:
+                        orig_pos = None
+
                 if x is not None and y is not None:
                     win32api.SetCursorPos((x, y))
-                    time.sleep(0.03)
+                    time.sleep(0.02)
 
                 down_flag = (
                     win32con.MOUSEEVENTF_LEFTDOWN
@@ -180,9 +188,15 @@ class InputDriver:
 
                 for _ in range(clicks):
                     win32api.mouse_event(down_flag, 0, 0, 0, 0)
-                    time.sleep(0.02)
+                    time.sleep(0.015)
                     win32api.mouse_event(up_flag, 0, 0, 0, 0)
-                    time.sleep(0.02)
+                    time.sleep(0.015)
+
+                if orig_pos is not None:
+                    try:
+                        win32api.SetCursorPos(orig_pos)
+                    except Exception:
+                        pass
                 return
             except Exception as e:
                 from rich.console import Console
@@ -197,22 +211,57 @@ class InputDriver:
         # 3. Standard fallback: PyAutoGUI
         backend = self._get_backend()
         if backend:
+            orig_pos = None
+            if restore_cursor:
+                try:
+                    orig_pos = backend.position()
+                except Exception:
+                    orig_pos = None
+
             if x is not None and y is not None:
                 backend.click(x=x, y=y, button=button, clicks=clicks)
             else:
                 backend.click(button=button, clicks=clicks)
 
+            if orig_pos is not None:
+                try:
+                    backend.moveTo(orig_pos[0], orig_pos[1])
+                except Exception:
+                    pass
+
     def double_click(
-        self, x: int | None = None, y: int | None = None, window_handle: int = 0
+        self,
+        x: int | None = None,
+        y: int | None = None,
+        window_handle: int = 0,
+        restore_cursor: bool = True,
     ) -> None:
         """Perform a double click."""
-        self.click(x=x, y=y, button="left", clicks=2, window_handle=window_handle)
+        self.click(
+            x=x,
+            y=y,
+            button="left",
+            clicks=2,
+            window_handle=window_handle,
+            restore_cursor=restore_cursor,
+        )
 
     def right_click(
-        self, x: int | None = None, y: int | None = None, window_handle: int = 0
+        self,
+        x: int | None = None,
+        y: int | None = None,
+        window_handle: int = 0,
+        restore_cursor: bool = True,
     ) -> None:
         """Perform a right click."""
-        self.click(x=x, y=y, button="right", clicks=1, window_handle=window_handle)
+        self.click(
+            x=x,
+            y=y,
+            button="right",
+            clicks=1,
+            window_handle=window_handle,
+            restore_cursor=restore_cursor,
+        )
 
     def drag_to(self, x: int, y: int, duration: float = 0.5) -> None:
         """Drag mouse to (x, y)."""
@@ -220,12 +269,25 @@ class InputDriver:
         if backend:
             backend.dragTo(x, y, duration=duration)
 
-    def scroll(self, amount: int, x: int | None = None, y: int | None = None) -> None:
+    def scroll(
+        self,
+        amount: int,
+        x: int | None = None,
+        y: int | None = None,
+        restore_cursor: bool = True,
+    ) -> None:
         """Scroll vertical wheel. Positive is up, negative is down."""
         if sys.platform == "win32":
             try:
                 import win32api
                 import win32con
+
+                orig_pos = None
+                if restore_cursor:
+                    try:
+                        orig_pos = win32api.GetCursorPos()
+                    except Exception:
+                        orig_pos = None
 
                 if x is not None and y is not None:
                     win32api.SetCursorPos((x, y))
@@ -239,15 +301,34 @@ class InputDriver:
 
                 win32api.mouse_event(win32con.MOUSEEVENTF_WHEEL, 0, 0, delta, 0)
                 time.sleep(0.02)
+
+                if orig_pos is not None:
+                    try:
+                        win32api.SetCursorPos(orig_pos)
+                    except Exception:
+                        pass
                 return
             except Exception:
                 pass
 
         backend = self._get_backend()
         if backend:
+            orig_pos = None
+            if restore_cursor:
+                try:
+                    orig_pos = backend.position()
+                except Exception:
+                    orig_pos = None
+
             if x is not None and y is not None:
                 backend.moveTo(x, y)
             backend.scroll(amount)
+
+            if orig_pos is not None:
+                try:
+                    backend.moveTo(orig_pos[0], orig_pos[1])
+                except Exception:
+                    pass
 
     def type_text(self, text: str, interval: float = 0.02, window_handle: int = 0) -> None:
         """Type unicode text into currently focused input or target window."""
