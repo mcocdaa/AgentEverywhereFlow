@@ -8,7 +8,7 @@ from typing import Any
 from fastapi import BackgroundTasks, FastAPI, HTTPException, WebSocket, WebSocketDisconnect, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, Response, StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from agenteverywhereflow import __version__
 from agenteverywhereflow.capturer import get_capturer
@@ -28,6 +28,30 @@ class CreateSessionRequest(BaseModel):
     mode: ExecutionMode = Field(default=ExecutionMode.MINIMAL_PYTHON)
     permission_mode: PermissionMode = Field(default=PermissionMode.AUTO)
     session_id: str | None = Field(default=None)
+
+    @field_validator("mode", mode="before")
+    @classmethod
+    def normalize_mode(cls, v: Any) -> Any:
+        """Allow 'minimal_python', 'minimal', 'codeact', and 'guarded' aliases."""
+        if isinstance(v, str):
+            v_lower = v.lower().strip()
+            if v_lower in ("minimal_python", "minimal", "codeact"):
+                return ExecutionMode.MINIMAL_PYTHON
+            if v_lower in ("control_guarded", "guarded"):
+                return ExecutionMode.CONTROL_GUARDED
+        return v
+
+    @field_validator("permission_mode", mode="before")
+    @classmethod
+    def normalize_permission_mode(cls, v: Any) -> Any:
+        """Allow 'auto' and 'manual' variations."""
+        if isinstance(v, str):
+            v_lower = v.lower().strip()
+            if v_lower in ("auto", "autonomous"):
+                return PermissionMode.AUTO
+            if v_lower in ("manual", "approval"):
+                return PermissionMode.MANUAL
+        return v
 
 
 class SendMessageRequest(BaseModel):
