@@ -1182,6 +1182,18 @@ def serve(
 
         threading.Thread(target=_open, daemon=True).start()
 
+    import os
+    import signal
+
+    def _sigint_handler(signum: int, frame: object) -> None:
+        console.print("\n[dim]Server stopped by user (Ctrl+C).[/dim]")
+        os._exit(0)
+
+    try:
+        signal.signal(signal.SIGINT, _sigint_handler)
+    except Exception:
+        pass
+
     try:
         uvicorn.run(
             "agenteverywhereflow.server.app:create_app",
@@ -1189,7 +1201,10 @@ def serve(
             port=bind_port,
             factory=True,
             reload=reload,
+            timeout_graceful_shutdown=2,
         )
+    except (KeyboardInterrupt, SystemExit):
+        os._exit(0)
     except OSError as e:
         if "10048" in str(e) or "already in use" in str(e).lower():
             console.print(
@@ -1294,13 +1309,28 @@ def _run_ui_server(
         )
     )
 
+    import os
+    import signal
+
+    def _sigint_handler(signum: int, frame: object) -> None:
+        console.print("\n[dim]WebUI Studio stopped by user (Ctrl+C).[/dim]")
+        os._exit(0)
+
+    try:
+        signal.signal(signal.SIGINT, _sigint_handler)
+    except Exception:
+        pass
+
     try:
         uvicorn.run(
             "agenteverywhereflow.server.app:create_app",
             host=bind_host,
             port=target_port,
             factory=True,
+            timeout_graceful_shutdown=2,
         )
+    except (KeyboardInterrupt, SystemExit):
+        os._exit(0)
     except OSError as e:
         if "10048" in str(e) or "already in use" in str(e).lower():
             console.print(
