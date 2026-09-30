@@ -38,6 +38,10 @@ class SessionManager:
         )
         with self._lock:
             self._sessions[session.session_id] = session
+        try:
+            session.save()
+        except Exception:
+            pass
         return session
 
     def get_session(self, session_id: str) -> ChatSession | None:
