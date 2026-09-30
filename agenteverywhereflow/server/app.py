@@ -7,7 +7,7 @@ from typing import Any
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, WebSocket, WebSocketDisconnect, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response, StreamingResponse
+from fastapi.responses import HTMLResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
 
 from agenteverywhereflow import __version__
@@ -66,6 +66,107 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    @app.get("/", response_class=HTMLResponse)
+    def root_overview() -> str:
+        """Friendly root landing page with service status and WebUI guidance."""
+        return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AgentEverywhereFlow Daemon Online</title>
+    <style>
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: #0b0f19;
+            color: #f1f5f9;
+            margin: 0;
+            padding: 40px 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 80vh;
+        }}
+        .card {{
+            max-width: 640px;
+            width: 100%;
+            background: #131b2e;
+            border: 1px solid #1e293b;
+            border-radius: 20px;
+            padding: 36px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+            text-align: center;
+        }}
+        .badge {{
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 5px 12px;
+            background: rgba(16, 185, 129, 0.15);
+            border: 1px solid rgba(16, 185, 129, 0.4);
+            border-radius: 9999px;
+            color: #34d399;
+            font-size: 12px;
+            font-weight: 600;
+            margin-bottom: 20px;
+        }}
+        .dot {{ width: 8px; height: 8px; border-radius: 50%; background: #34d399; box-shadow: 0 0 8px #34d399; }}
+        h1 {{ font-size: 26px; font-weight: 700; margin: 0 0 10px; color: #ffffff; letter-spacing: -0.5px; }}
+        h1 span {{ color: #818cf8; }}
+        p {{ color: #94a3b8; font-size: 14px; line-height: 1.6; margin: 0 0 24px; }}
+        .actions {{ display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-bottom: 28px; }}
+        .btn {{
+            display: inline-flex;
+            align-items: center;
+            padding: 10px 20px;
+            border-radius: 10px;
+            font-size: 13px;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.2s;
+        }}
+        .btn-primary {{ background: #4f46e5; color: white; box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3); }}
+        .btn-primary:hover {{ background: #4338ca; transform: translateY(-1px); }}
+        .btn-outline {{ background: #1e293b; color: #cbd5e1; border: 1px solid #334155; }}
+        .btn-outline:hover {{ background: #334155; color: white; }}
+        .guide-box {{
+            background: #0a0f1d;
+            border: 1px solid #1e293b;
+            border-radius: 12px;
+            padding: 16px;
+            text-align: left;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            font-size: 12px;
+            color: #cbd5e1;
+        }}
+        .guide-header {{ color: #818cf8; font-weight: 600; margin-bottom: 8px; font-family: sans-serif; }}
+        .code {{ color: #38bdf8; }}
+        .comment {{ color: #64748b; }}
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="badge"><span class="dot"></span> BACKEND DAEMON ONLINE • v{__version__}</div>
+        <h1>AgentEverywhere<span>Flow</span></h1>
+        <p>The headless dialogue service & viewport isolation engine is active and ready to accept API and WebSocket requests.</p>
+        
+        <div class="actions">
+            <a href="/docs" class="btn btn-primary">📖 Swagger API Docs</a>
+            <a href="/api/v1/health" class="btn btn-outline">⚡ Health Check API</a>
+            <a href="/api/v1/targets" class="btn btn-outline">🖥️ List System Targets</a>
+        </div>
+
+        <div class="guide-box">
+            <div class="guide-header">💡 How to launch the interactive WebUI Console:</div>
+            <div class="comment"># In your terminal, launch the companion frontend:</div>
+            <div>cd <span class="code">AgentEverywhereFlow-WebUI</span></div>
+            <div><span class="code">pnpm dev</span></div>
+            <div class="comment" style="margin-top: 6px;"># Open in browser: <span style="color: #a5b4fc;">http://localhost:5173</span></div>
+        </div>
+    </div>
+</body>
+</html>"""
 
     @app.get("/api/v1/health")
     def health_check() -> dict[str, Any]:
