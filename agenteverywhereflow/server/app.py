@@ -15,6 +15,7 @@ from agenteverywhereflow.capturer import get_capturer
 from agenteverywhereflow.capturer.selector import resolve_target
 from agenteverywhereflow.config import ExecutionMode
 from agenteverywhereflow.security.permission import ApprovalDecision, PermissionMode
+from agenteverywhereflow.server.webui import get_webui_dist_path, get_webui_status
 from agenteverywhereflow.session.manager import session_manager
 from agenteverywhereflow.session.state import SessionEvent
 
@@ -67,10 +68,19 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    @app.get("/", response_class=HTMLResponse)
-    def root_overview() -> str:
-        """Friendly root landing page with service status and WebUI guidance."""
-        return f"""<!DOCTYPE html>
+    webui_dir = get_webui_dist_path()
+
+    @app.get("/api/v1/webui/status")
+    def webui_status() -> dict[str, Any]:
+        """Status of prebuilt WebUI assets."""
+        return get_webui_status()
+
+    if webui_dir is None:
+
+        @app.get("/", response_class=HTMLResponse)
+        def root_overview() -> str:
+            """Friendly root landing page with service status and WebUI guidance."""
+            return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="utf-8">
@@ -478,5 +488,10 @@ def create_app() -> FastAPI:
         finally:
             send_task.cancel()
             session.remove_listener(on_event)
+
+    if webui_dir is not None:
+        from fastapi.staticfiles import StaticFiles
+
+        app.mount("/", StaticFiles(directory=str(webui_dir), html=True), name="webui")
 
     return app

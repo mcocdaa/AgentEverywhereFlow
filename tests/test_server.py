@@ -128,3 +128,25 @@ def test_server_session_lifecycle() -> None:
         del_resp = client.delete("/api/v1/sessions/test-srv-session")
         assert del_resp.status_code == 200
         assert len(session_manager.list_sessions()) == 0
+
+
+def test_server_webui_status() -> None:
+    """Verify WebUI status endpoint reports status and asset metadata."""
+    app = create_app()
+    client = TestClient(app)
+
+    resp = client.get("/api/v1/webui/status")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "installed" in data
+    assert "path" in data
+
+
+def test_server_webui_serves_root() -> None:
+    """Verify root serves index.html or fallback landing page."""
+    app = create_app()
+    client = TestClient(app)
+
+    resp = client.get("/")
+    assert resp.status_code == 200
+    assert "AgentEverywhereFlow" in resp.text

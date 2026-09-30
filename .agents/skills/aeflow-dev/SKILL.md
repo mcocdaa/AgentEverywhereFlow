@@ -36,8 +36,8 @@ This skill equips coding agents with end-to-end knowledge and runbooks for devel
 | :--- | :--- | :--- |
 | **交互式投屏召唤** | `uv run aef summon` | 终端交互式列表选择物理屏幕或窗口进行投屏 |
 | **单任务执行** | `uv run aef run --target "Chrome" --task "..."` | 按窗口标题关键字或句柄执行任务 |
-| **多窗口协同对话** | `uv run aef chat --target "Chrome,Excel" --permission manual` | 连续多轮交互，跨窗口协同，开启审批门 |
-| **常驻对话服务** | `uv run aef serve --host 127.0.0.1 --port 8000` | 启动 FastAPI + WebSocket 后台服务（Swagger: `/docs`） |
+| **一键启动 WebUI** | `uv run aef ui` | **零配置**直接在浏览器打开 WebUI Studio 控制台（免 Node.js/免 clone，自适应空闲端口） |
+| **常驻对话服务** | `uv run aef serve --host 127.0.0.1 --port 8000` | 启动 FastAPI + WebSocket 后台服务（Swagger: `/docs`，内嵌 WebUI） |
 | **工作流回放** | `uv run aef workflow play ~/.aef/workflows/flow.yaml [--speed 1.5]` | **0 LLM API 调用**，自适应视口确定性快速重放 |
 | **断点续跑** | `uv run aef chat --resume latest` | 从历史会话断点继续对话 |
 | **在线自更新** | `uv run aef update` | 自动检查并升级至最新 GitHub Release 版本 |

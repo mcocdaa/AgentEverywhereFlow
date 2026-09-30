@@ -207,7 +207,10 @@ aef run --target "Chrome" --task "Search for GitHub Trending repositories"
 # 4. Multi-target cross-window continuous conversation
 aef chat --target "Chrome,Excel" --permission manual
 
-# 5. Launch REST & WebSocket Dialogue Service Daemon (Swagger: http://localhost:8000/docs)
+# 5. Launch interactive WebUI Studio in browser (zero setup, auto-opens browser)
+aef ui
+
+# 6. Launch REST & WebSocket Dialogue Service Daemon (Swagger: http://localhost:8000/docs)
 aef serve --host 127.0.0.1 --port 8000
 
 # 6. Replay recorded workflow with zero LLM API calls (deterministic playback)

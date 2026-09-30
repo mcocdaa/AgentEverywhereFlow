@@ -1112,12 +1112,20 @@ def serve(
     port: int = typer.Option(
         None, "--port", "-p", help="Bind port number (default: 8000 or from config)"
     ),
+    open_browser: bool = typer.Option(
+        False, "--open", help="Open WebUI Studio in default browser upon startup"
+    ),
     reload: bool = typer.Option(False, "--reload", "-r", help="Enable auto-reload for development"),
 ) -> None:
     """Launch the AgentEverywhereFlow REST & WebSocket dialogue service daemon."""
+    import threading
+    import time
+    import webbrowser
+
     import uvicorn
 
     from agenteverywhereflow.config import config
+    from agenteverywhereflow.server.webui import is_webui_available
 
     bind_host = host or config.server_host
     bind_port = port or config.server_port
@@ -1144,10 +1152,17 @@ def serve(
         )
         raise typer.Exit(code=1)
 
+    webui_line = (
+        f"[bold cyan]🖥️ WebUI Console:[/bold cyan]  http://{bind_host}:{bind_port}\n"
+        if is_webui_available()
+        else ""
+    )
+
     console.print(
         Panel(
             f"[bold green]🚀 AgentEverywhereFlow Dialogue Service Daemon[/bold green]\n\n"
             f"[bold cyan]🌐 Server Endpoint:[/bold cyan] http://{bind_host}:{bind_port}\n"
+            f"{webui_line}"
             f"[bold cyan]📖 Swagger Docs:[/bold cyan]    http://{bind_host}:{bind_port}/docs\n"
             f"[bold cyan]🔌 REST Base:[/bold cyan]       http://{bind_host}:{bind_port}/api/v1\n"
             f"[bold cyan]⚡ WebSocket:[/bold cyan]       ws://{bind_host}:{bind_port}/api/v1/sessions/{{id}}/ws",
@@ -1155,6 +1170,17 @@ def serve(
             border_style="green",
         )
     )
+
+    if open_browser:
+
+        def _open():
+            time.sleep(0.8)
+            try:
+                webbrowser.open(f"http://{bind_host}:{bind_port}")
+            except Exception:
+                pass
+
+        threading.Thread(target=_open, daemon=True).start()
 
     try:
         uvicorn.run(
@@ -1172,6 +1198,216 @@ def serve(
             )
             raise typer.Exit(code=1) from None
         raise
+
+
+# ---------------------------------------------------------------------------
+# WebUI Studio Commands (First-class UI Experience)
+# ---------------------------------------------------------------------------
+ui_app = typer.Typer(
+    name="ui",
+    help="Launch, install, or update the embedded WebUI Studio console.",
+    invoke_without_command=True,
+    add_completion=False,
+    context_settings=CONTEXT_SETTINGS,
+)
+app.add_typer(ui_app, name="ui")
+
+
+def _run_ui_server(
+    host: str | None = None,
+    port: int | None = None,
+    open_browser: bool = True,
+    update: bool = False,
+) -> None:
+    import threading
+    import time
+    import webbrowser
+
+    import uvicorn
+
+    from agenteverywhereflow.config import config
+    from agenteverywhereflow.server.webui import (
+        get_webui_dist_path,
+        install_webui,
+        is_webui_available,
+    )
+
+    if update or not is_webui_available():
+        with console.status("[bold cyan]Preparing WebUI studio assets...[/bold cyan]"):
+            try:
+                install_webui(force=update)
+                console.print("[bold green]✓ WebUI assets ready.[/bold green]")
+            except Exception as e:
+                console.print(f"[yellow]⚠️ WebUI auto-install note: {e}[/yellow]")
+
+    bind_host = host or config.server_host
+    base_port = port or config.server_port
+
+    target_port = base_port
+    if port is None:
+        # Dynamically find next available port so user doesn't hit port collision
+        for candidate in range(base_port, base_port + 20):
+            is_free, _ = _check_port_available(bind_host, candidate)
+            if is_free:
+                target_port = candidate
+                break
+    else:
+        is_free, occupant = _check_port_available(bind_host, target_port)
+        if not is_free:
+            occ_str = f" by [bold cyan]{occupant}[/bold cyan]" if occupant else ""
+            console.print(
+                f"[bold red]❌ Port {target_port} is already in use{occ_str}![/bold red]\n"
+                f"[yellow]Try specifying another port: [cyan]aef ui --port {target_port + 1}[/cyan][/yellow]"
+            )
+            raise typer.Exit(code=1)
+
+    url = f"http://{bind_host}:{target_port}"
+
+    if open_browser:
+
+        def _open():
+            time.sleep(0.8)
+            try:
+                webbrowser.open(url)
+            except Exception:
+                pass
+
+        threading.Thread(target=_open, daemon=True).start()
+
+    dist_path = get_webui_dist_path()
+    dist_info = (
+        f"[dim]Assets:[/dim] [cyan]{dist_path}[/cyan]"
+        if dist_path
+        else "[dim]Assets: Default HTML Landing[/dim]"
+    )
+
+    console.print(
+        Panel(
+            f"[bold magenta]🖥️ AgentEverywhereFlow WebUI Studio[/bold magenta]\n\n"
+            f"[bold cyan]🌐 WebUI Console:[/bold cyan]  [bold underline]{url}[/bold underline]\n"
+            f"[bold cyan]📖 Swagger Docs:[/bold cyan]   http://{bind_host}:{target_port}/docs\n"
+            f"[bold cyan]🔌 REST Base:[/bold cyan]      http://{bind_host}:{target_port}/api/v1\n"
+            f"[bold cyan]⚡ WebSocket:[/bold cyan]      ws://{bind_host}:{target_port}/api/v1/sessions/{{id}}/ws\n"
+            f"{dist_info}",
+            title="✨ Studio Online",
+            border_style="magenta",
+        )
+    )
+
+    try:
+        uvicorn.run(
+            "agenteverywhereflow.server.app:create_app",
+            host=bind_host,
+            port=target_port,
+            factory=True,
+        )
+    except OSError as e:
+        if "10048" in str(e) or "already in use" in str(e).lower():
+            console.print(
+                f"[bold red]❌ Error binding to {bind_host}:{target_port}: Port already in use.[/bold red]\n"
+                f"[yellow]Try specifying another port: [cyan]aef ui --port {target_port + 1}[/cyan][/yellow]"
+            )
+            raise typer.Exit(code=1) from None
+        raise
+
+
+@ui_app.callback(invoke_without_command=True)
+def ui_default(
+    ctx: typer.Context,
+    host: str | None = typer.Option(
+        None, "--host", "-H", help="Bind host address (default: 127.0.0.1)"
+    ),
+    port: int | None = typer.Option(
+        None,
+        "--port",
+        "-p",
+        help="Bind port number (default: auto-detect free port starting from 8000)",
+    ),
+    open_browser: bool = typer.Option(True, "--open/--no-open", help="Automatically open browser"),
+    update: bool = typer.Option(
+        False, "--update", "-u", help="Check and update WebUI assets before launching"
+    ),
+) -> None:
+    """Launch the WebUI Studio console in your browser (zero setup required)."""
+    if ctx.invoked_subcommand is not None:
+        return
+    _run_ui_server(host=host, port=port, open_browser=open_browser, update=update)
+
+
+@ui_app.command(name="open")
+def ui_open(
+    host: str | None = typer.Option(None, "--host", "-H", help="Bind host address"),
+    port: int | None = typer.Option(None, "--port", "-p", help="Bind port number"),
+    no_open: bool = typer.Option(False, "--no-open", help="Do not open browser"),
+) -> None:
+    """Open the WebUI Studio console."""
+    _run_ui_server(host=host, port=port, open_browser=not no_open, update=False)
+
+
+@ui_app.command(name="install")
+def ui_install(
+    version: str | None = typer.Option(
+        None, "--version", "-v", help="Specific release version tag"
+    ),
+    force: bool = typer.Option(True, "--force", "-f", help="Force reinstall"),
+) -> None:
+    """Download and install the latest prebuilt WebUI static bundle."""
+    from agenteverywhereflow.server.webui import install_webui
+
+    with console.status(
+        "[bold cyan]Downloading and installing prebuilt WebUI assets...[/bold cyan]"
+    ):
+        try:
+            path = install_webui(version=version, force=force)
+            console.print(
+                f"[bold green]✓ WebUI assets installed successfully to:[/bold green] [cyan]{path}[/cyan]"
+            )
+            console.print("[dim]Run [bold]aef ui[/bold] to launch the studio console.[/dim]")
+        except Exception as e:
+            console.print(f"[bold red]❌ Failed to install WebUI assets:[/bold red] {e}")
+            raise typer.Exit(code=1) from None
+
+
+@ui_app.command(name="update")
+def ui_update() -> None:
+    """Update prebuilt WebUI static bundle to the latest release."""
+    from agenteverywhereflow.server.webui import install_webui
+
+    with console.status("[bold cyan]Updating WebUI assets to latest release...[/bold cyan]"):
+        try:
+            path = install_webui(force=True)
+            console.print(
+                f"[bold green]✓ WebUI assets updated successfully at:[/bold green] [cyan]{path}[/cyan]"
+            )
+        except Exception as e:
+            console.print(f"[bold red]❌ Failed to update WebUI assets:[/bold red] {e}")
+            raise typer.Exit(code=1) from None
+
+
+@ui_app.command(name="status")
+def ui_status() -> None:
+    """Show WebUI installation status and asset path."""
+    from agenteverywhereflow.server.webui import get_webui_status
+
+    st = get_webui_status()
+    installed = st["installed"]
+    status_str = (
+        "[bold green]Installed & Available[/bold green]"
+        if installed
+        else "[bold red]Not Installed[/bold red]"
+    )
+    embed_str = " (Package-Embedded)" if st.get("is_embedded") else " (User Directory)"
+
+    console.print(
+        Panel(
+            f"[bold cyan]Status:[/bold cyan]       {status_str}{embed_str if installed else ''}\n"
+            f"[bold cyan]Path:[/bold cyan]         {st.get('path') or 'N/A'}\n"
+            f"[bold cyan]HTML Index:[/bold cyan]   {'✓ Yes' if st.get('has_index') else '❌ No'}\n"
+            f"[bold cyan]Asset Files:[/bold cyan]  {st.get('asset_count', 0)} files",
+            title="🖥️ WebUI Installation Status",
+            border_style="cyan",
+        )
+    )
 
 
 session_app = typer.Typer(
