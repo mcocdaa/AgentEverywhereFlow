@@ -485,9 +485,24 @@ class ChatSession:
         effective_max_steps = max_steps if max_steps is not None else self.config.max_steps
         self.turn_count += 1
         self.state = SessionState.RUNNING
+        logger.info(
+            "Session %s (target='%s' [%s], %dx%d) starting turn %d: %s",
+            self.session_id,
+            self.target.title,
+            self.target.target_id,
+            self.target.rect.width,
+            self.target.rect.height,
+            self.turn_count,
+            user_instruction,
+        )
         self.emit_event(
             SessionEventType.TURN_START,
-            payload={"turn": self.turn_count, "instruction": user_instruction},
+            payload={
+                "turn": self.turn_count,
+                "instruction": user_instruction,
+                "target_title": self.target.title,
+                "target_id": self.target.target_id,
+            },
         )
 
         # Append user instruction to messages

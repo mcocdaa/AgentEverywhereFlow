@@ -349,6 +349,20 @@ def create_app() -> FastAPI:
             "turn_count": session.turn_count,
             "total_steps": session.total_steps,
             "pending_approval": pending_dict,
+            "recorded_steps": getattr(session, "recorded_steps", []),
+        }
+
+    @app.get("/api/v1/sessions/{session_id}/history")
+    def get_session_history(session_id: str) -> dict[str, Any]:
+        """Fetch past messages and recorded action steps for a session."""
+        session = _resolve_session(session_id)
+        if not session:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+        return {
+            "session_id": session.session_id,
+            "recorded_steps": getattr(session, "recorded_steps", []),
+            "turn_count": session.turn_count,
+            "total_steps": session.total_steps,
         }
 
     @app.post("/api/v1/sessions/{session_id}/message")
@@ -558,6 +572,12 @@ def create_app() -> FastAPI:
                 if action == "message":
                     instruction = data.get("instruction", "")
                     max_steps = int(data.get("max_steps", 100))
+                    logger.info(
+                        "WS received message for session %s (bound target='%s'): %s",
+                        session.session_id,
+                        session.target.title,
+                        instruction,
+                    )
                     # Run turn in background thread
                     threading.Thread(
                         target=session.execute_turn,

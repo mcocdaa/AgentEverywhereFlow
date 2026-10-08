@@ -71,8 +71,8 @@ class LinuxCapturer(BaseCapturer):
                     x, y, w, h = int(parts[3]), int(parts[4]), int(parts[5]), int(parts[6])
                     title = parts[8].strip()
 
-                    # Filter out tiny system panels, docks, and self-console
-                    if w > 30 and h > 30 and title and "AgentEverywhereFlow Studio" not in title:
+                    # Filter out tiny system panels and docks
+                    if w > 30 and h > 30 and title:
                         windows.append(
                             TargetInfo(
                                 target_id=f"xwin:{win_id_hex}",

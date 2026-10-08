@@ -153,10 +153,7 @@ class WindowsCapturer(BaseCapturer):
             class_name = win32gui.GetClassName(hwnd)
             if class_name in ("Progman", "WorkerW", "Shell_TrayWnd", "Windows.UI.Core.CoreWindow"):
                 return True
-            if (
-                title in ("Program Manager", "NVIDIA GeForce Overlay", "Windows Input Experience")
-                or "AgentEverywhereFlow Studio" in title
-            ):
+            if title in ("Program Manager", "NVIDIA GeForce Overlay", "Windows Input Experience"):
                 return True
 
             # Exclude cloaked windows (e.g. UWP suspended apps, background store apps)
