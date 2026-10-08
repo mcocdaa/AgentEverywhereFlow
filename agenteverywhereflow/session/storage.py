@@ -44,6 +44,7 @@ class SessionMetadata(BaseModel):
     session_id: str
     target_id: str
     target_title: str
+    title: str = ""
     target_type: str = "window"
     target_rect: dict[str, int] = Field(default_factory=dict)
     native_handle: int = 0
@@ -83,6 +84,7 @@ class SessionStorage:
         created_at: float,
         targets: list[TargetInfo] | None = None,
         recorded_steps: list[dict[str, Any]] | None = None,
+        title: str = "",
     ) -> Path:
         """Atomically persist session metadata and conversational trajectory to disk."""
         s_dir = self._get_session_dir(session_id)
@@ -108,10 +110,12 @@ class SessionStorage:
             for t in all_tgts
         ]
 
+        resolved_title = title.strip() if title else target.title
         meta = SessionMetadata(
             session_id=session_id,
             target_id=target.target_id,
             target_title=target.title,
+            title=resolved_title,
             target_type=target.target_type.value
             if hasattr(target.target_type, "value")
             else str(target.target_type),

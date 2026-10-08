@@ -57,6 +57,10 @@ class CreateSessionRequest(BaseModel):
         return v
 
 
+class UpdateSessionRequest(BaseModel):
+    title: str | None = Field(default=None, description="Custom title / rename for session")
+
+
 class SendMessageRequest(BaseModel):
     instruction: str = Field(description="Instruction or task to execute in this dialogue turn")
     max_steps: int = Field(default=100, description="Max steps for this turn")
@@ -303,12 +307,14 @@ def create_app() -> FastAPI:
             {
                 "session_id": s.session_id,
                 "target_id": s.target.target_id,
-                "title": s.target.title,
+                "title": getattr(s, "title", "") or s.target.title,
+                "target_title": s.target.title,
                 "mode": s.mode.value,
                 "permission_mode": s.permission_gate.mode.value,
                 "state": s.state.value,
                 "turn_count": s.turn_count,
                 "total_steps": s.total_steps,
+                "created_at": getattr(s, "created_at", 0),
             }
             for s in active
         ]
@@ -326,6 +332,7 @@ def create_app() -> FastAPI:
 
         return {
             "session_id": session.session_id,
+            "title": getattr(session, "title", "") or session.target.title,
             "target": {
                 "target_id": session.target.target_id,
                 "title": session.target.title,
@@ -489,6 +496,21 @@ def create_app() -> FastAPI:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to capture screenshot: {e}",
             ) from e
+
+    @app.patch("/api/v1/sessions/{session_id}")
+    def update_session(session_id: str, req: UpdateSessionRequest) -> dict[str, Any]:
+        """Update session metadata such as title / rename."""
+        session = _resolve_session(session_id)
+        if not session:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+        if req.title is not None:
+            session.title = req.title.strip()
+            session.save()
+        return {
+            "status": "ok",
+            "session_id": session.session_id,
+            "title": getattr(session, "title", "") or session.target.title,
+        }
 
     @app.delete("/api/v1/sessions/{session_id}")
     def delete_session(session_id: str) -> dict[str, Any]:

@@ -83,15 +83,16 @@ class SessionManager:
 
     def close_session(self, session_id: str, delete_storage: bool = False) -> bool:
         """Mark session as closed and optionally remove files from disk."""
+        deleted_from_disk = False
         with self._lock:
             session = self._sessions.pop(session_id, None)
             if session:
                 session.state = SessionState.CLOSED
 
         if delete_storage:
-            session_storage.delete_session(session_id)
+            deleted_from_disk = session_storage.delete_session(session_id)
 
-        return session is not None
+        return session is not None or deleted_from_disk
 
     def clear(self) -> None:
         """Clear all in-memory registered sessions."""

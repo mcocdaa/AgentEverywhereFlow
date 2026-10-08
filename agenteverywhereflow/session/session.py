@@ -56,6 +56,7 @@ class ChatSession:
         app_config: AppConfig | None = None,
         planner_func: Any | None = None,
         approval_timeout: float = 300.0,
+        title: str = "",
     ) -> None:
         self.session_id = session_id or uuid.uuid4().hex[:10]
         if targets:
@@ -67,6 +68,7 @@ class ChatSession:
         else:
             raise ValueError("Either target or targets must be specified.")
 
+        self.title = title or (self.target.title if self.target else "")
         self.mode = mode
         self.config = app_config or config
         self.planner_func = planner_func
@@ -344,6 +346,7 @@ class ChatSession:
             token_usage=self.token_usage,
             created_at=self.created_at,
             recorded_steps=self.recorded_steps,
+            title=self.title,
         )
 
     @classmethod
@@ -413,6 +416,7 @@ class ChatSession:
         session.token_usage = meta.token_usage
         session.created_at = meta.created_at
         session.state = SessionState(meta.state)
+        session.title = getattr(meta, "title", "") or meta.target_title
         if raw_messages:
             session.messages = raw_messages
         session.recorded_steps = session_storage.load_recorded_steps(session_id)
