@@ -44,7 +44,12 @@ Guidelines:
    - Budget your steps wisely: do NOT spend excessive steps repeatedly scrolling back and forth or waiting in a loop.
    - When reading text from chat windows or documents, capture the main takeaways in 1-2 scroll operations rather than repeatedly micro-scrolling step after step.
    - If the user asks for a discussion, question, or conclusion, proceed promptly to interact (type, ask question, or conclude) once you have grasped the key context.
+6. Modal Dialogs, Popups & File Pickers:
+   - If an unexpected popup, file selection dialog, or modal window appears, observe its content carefully.
+   - If a dialog opened accidentally (e.g. clicking an attachment/folder button by mistake), dismiss it promptly using `press("esc")` or clicking its Cancel/Close button before proceeding.
+   - Never continue blindly typing or clicking on the background when a foreground modal dialog is blocking the interface.
 """
+
 
 GUARDED_MODE_SYSTEM_PROMPT = """You are AgentEverywhereFlow, an autonomous GUI agent operating with strict permission-controlled atomic tool calls.
 

@@ -217,8 +217,85 @@ class WindowsCapturer(BaseCapturer):
         win32gui.EnumWindows(enum_callback, None)
         return windows
 
+    def _get_active_popup(self, hwnd: int) -> int:
+        """Find the active owned popup/modal dialog for this window, if any."""
+        if not is_windows:
+            return 0
+        try:
+            popup = win32gui.GetLastActivePopup(hwnd)
+            if (
+                popup
+                and popup != hwnd
+                and win32gui.IsWindow(popup)
+                and win32gui.IsWindowVisible(popup)
+            ):
+                return popup
+        except Exception:
+            pass
+        return 0
+
+    def _is_foreground_or_child(self, hwnd: int, popup_hwnd: int = 0) -> bool:
+        """Check if hwnd or its popup/descendant is the current foreground window."""
+        if not is_windows:
+            return False
+        try:
+            fore = win32gui.GetForegroundWindow()
+            if not fore:
+                return False
+            if fore == hwnd or (popup_hwnd and fore == popup_hwnd):
+                return True
+            owner = win32gui.GetWindow(fore, win32con.GW_OWNER)
+            if owner == hwnd:
+                return True
+            _, fore_pid = win32process.GetWindowThreadProcessId(fore)
+            _, tgt_pid = win32process.GetWindowThreadProcessId(hwnd)
+            if fore_pid == tgt_pid:
+                return True
+        except Exception:
+            pass
+        return False
+
+    def _print_window(self, hwnd: int, width: int, height: int) -> Image.Image | None:
+        """Capture a single window using PrintWindow (PW_RENDERFULLCONTENT)."""
+        if not is_windows:
+            return None
+        try:
+            PW_RENDERFULLCONTENT = 0x00000002
+            hwnd_dc = win32gui.GetWindowDC(hwnd)
+            mfc_dc = win32ui.CreateDCFromHandle(hwnd_dc)
+            save_dc = mfc_dc.CreateCompatibleDC()
+
+            save_bitmap = win32ui.CreateBitmap()
+            save_bitmap.CreateCompatibleBitmap(mfc_dc, width, height)
+            save_dc.SelectObject(save_bitmap)
+
+            ctypes.windll.user32.PrintWindow(hwnd, save_dc.GetSafeHdc(), PW_RENDERFULLCONTENT)  # type: ignore[attr-defined]
+
+            bmpinfo = save_bitmap.GetInfo()
+            bmpstr = save_bitmap.GetBitmapBits(True)
+            img = Image.frombuffer(
+                "RGB",
+                (bmpinfo["bmWidth"], bmpinfo["bmHeight"]),
+                bmpstr,
+                "raw",
+                "BGRX",
+                0,
+                1,
+            )
+
+            win32gui.DeleteObject(save_bitmap.GetHandle())
+            save_dc.DeleteDC()
+            mfc_dc.DeleteDC()
+            win32gui.ReleaseDC(hwnd, hwnd_dc)
+
+            if img.width > 0 and img.height > 0:
+                return img
+        except Exception:
+            pass
+        return None
+
     def capture(self, target: TargetInfo) -> Image.Image:
-        """Capture the target. Uses PrintWindow for windows, mss for displays."""
+        """Capture the target. Handles displays, foreground windows with popups, and background windows."""
         if target.target_type == TargetType.DISPLAY:
             return self._capture_rect(target.rect)
 
@@ -229,46 +306,55 @@ class WindowsCapturer(BaseCapturer):
             if win32gui.IsIconic(hwnd):
                 win32gui.ShowWindow(hwnd, win32con.SW_SHOWNOACTIVATE)
 
+            # Check for active owned modal popup (e.g. file dialog, alert box)
+            popup_hwnd = self._get_active_popup(hwnd)
+
             # Update latest bounding rectangle dynamically
             x, y, width, height = self.get_window_bounds(hwnd)
-            target.rect = Rect(x=x, y=y, width=width, height=height)
 
-            # Try native PrintWindow with PW_RENDERFULLCONTENT (captures even if occluded)
+            # If an active popup exists, union its bounding box with parent so dialog is visible
+            if popup_hwnd:
+                px, py, pw, ph = self.get_window_bounds(popup_hwnd)
+                ux = min(x, px)
+                uy = min(y, py)
+                ur = max(x + width, px + pw)
+                ub = max(y + height, py + ph)
+                target.rect = Rect(x=ux, y=uy, width=ur - ux, height=ub - uy)
+            else:
+                target.rect = Rect(x=x, y=y, width=width, height=height)
+
+            # If the target window or its popup/child is currently in the foreground,
+            # capture directly from screen DC. This preserves 100% fidelity:
+            # child popups, modal file dialogs, context menus, tooltips, and comboboxes.
+            if self._is_foreground_or_child(hwnd, popup_hwnd):
+                return self._capture_rect(target.rect)
+
+            # Otherwise (window is in background/occluded), use PrintWindow with PW_RENDERFULLCONTENT
             try:
-                PW_RENDERFULLCONTENT = 0x00000002
-                hwnd_dc = win32gui.GetWindowDC(hwnd)
-                mfc_dc = win32ui.CreateDCFromHandle(hwnd_dc)
-                save_dc = mfc_dc.CreateCompatibleDC()
-
-                save_bitmap = win32ui.CreateBitmap()
-                save_bitmap.CreateCompatibleBitmap(mfc_dc, width, height)
-                save_dc.SelectObject(save_bitmap)
-
-                ctypes.windll.user32.PrintWindow(hwnd, save_dc.GetSafeHdc(), PW_RENDERFULLCONTENT)  # type: ignore[attr-defined]
-
-                bmpinfo = save_bitmap.GetInfo()
-                bmpstr = save_bitmap.GetBitmapBits(True)
-                img = Image.frombuffer(
-                    "RGB",
-                    (bmpinfo["bmWidth"], bmpinfo["bmHeight"]),
-                    bmpstr,
-                    "raw",
-                    "BGRX",
-                    0,
-                    1,
-                )
-
-                win32gui.DeleteObject(save_bitmap.GetHandle())
-                save_dc.DeleteDC()
-                mfc_dc.DeleteDC()
-                win32gui.ReleaseDC(hwnd, hwnd_dc)
-
-                if img.width > 0 and img.height > 0:
-                    return img
+                img_parent = self._print_window(hwnd, width, height)
+                if popup_hwnd and img_parent:
+                    try:
+                        px, py, pw, ph = self.get_window_bounds(popup_hwnd)
+                        img_popup = self._print_window(popup_hwnd, pw, ph)
+                        if img_popup:
+                            if target.rect.width != width or target.rect.height != height:
+                                canvas = Image.new(
+                                    "RGB", (target.rect.width, target.rect.height), (0, 0, 0)
+                                )
+                                canvas.paste(img_parent, (x - target.rect.x, y - target.rect.y))
+                                canvas.paste(img_popup, (px - target.rect.x, py - target.rect.y))
+                                return canvas
+                            else:
+                                img_parent.paste(img_popup, (px - x, py - y))
+                                return img_parent
+                    except Exception:
+                        pass
+                if img_parent:
+                    return img_parent
             except Exception:
-                pass  # Fall back to mss rect capture
+                pass
 
-            return self._capture_rect(Rect(x, y, width, height))
+            return self._capture_rect(target.rect)
 
         return self._capture_rect(target.rect)
 
@@ -367,6 +453,14 @@ class WindowsCapturer(BaseCapturer):
                         win32process.AttachThreadInput(cur_thread, target_thread, False)
                 else:
                     win32gui.BringWindowToTop(hwnd)
+
+                popup_hwnd = self._get_active_popup(hwnd)
+                if popup_hwnd and win32gui.IsWindow(popup_hwnd):
+                    try:
+                        win32gui.BringWindowToTop(popup_hwnd)
+                        win32gui.SetForegroundWindow(popup_hwnd)
+                    except Exception:
+                        pass
 
                 time.sleep(0.08)
                 return True
