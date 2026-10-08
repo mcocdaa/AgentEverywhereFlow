@@ -270,6 +270,41 @@ class InputDriver:
         if backend:
             backend.dragTo(x, y, duration=duration)
 
+    def drag(
+        self,
+        from_x: int,
+        from_y: int,
+        to_x: int,
+        to_y: int,
+        duration: float = 0.5,
+    ) -> None:
+        """Drag mouse from (from_x, from_y) to (to_x, to_y)."""
+        if sys.platform == "win32":
+            try:
+                import win32api
+                import win32con
+
+                win32api.SetCursorPos((from_x, from_y))
+                time.sleep(0.05)
+                win32api.mouse_event(win32con.MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
+                time.sleep(0.05)
+                steps = max(10, int(duration * 60))
+                for i in range(1, steps + 1):
+                    cx = int(from_x + (to_x - from_x) * (i / steps))
+                    cy = int(from_y + (to_y - from_y) * (i / steps))
+                    win32api.SetCursorPos((cx, cy))
+                    time.sleep(duration / steps)
+                win32api.mouse_event(win32con.MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
+                time.sleep(0.05)
+                return
+            except Exception:
+                pass
+
+        backend = self._get_backend()
+        if backend:
+            backend.moveTo(from_x, from_y)
+            backend.dragTo(to_x, to_y, duration=duration)
+
     def scroll(
         self,
         amount: int,

@@ -127,6 +127,25 @@ class PythonReplEngine(BaseExecutionEngine):
             )
             driver.double_click(x=sx, y=sy, window_handle=tgt.native_handle)
 
+        def drag(
+            from_x: float,
+            from_y: float,
+            to_x: float,
+            to_y: float,
+            duration: float = 0.5,
+            target: str | TargetInfo | None = None,
+        ) -> None:
+            tgt = switch_to(target) if target else active_target_box[0]
+            self.capturer.focus(tgt)
+            sx1, sy1 = _resolve_coords(from_x, from_y, tgt)
+            sx2, sy2 = _resolve_coords(to_x, to_y, tgt)
+            _log(
+                f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]drag[/bold cyan]({int(from_x)}, {int(from_y)} -> {int(to_x)}, {int(to_y)}) "
+                f"[dim]──▶ Screen: ({sx1}, {sy1}) -> ({sx2}, {sy2}) [window='{tgt.title}'][/dim]",
+                f"⚡ [Tool Call] drag({int(from_x)}, {int(from_y)} -> {int(to_x)}, {int(to_y)}) ──▶ Screen: ({sx1}, {sy1}) -> ({sx2}, {sy2}) [window='{tgt.title}']",
+            )
+            driver.drag(from_x=sx1, from_y=sy1, to_x=sx2, to_y=sy2, duration=duration)
+
         def right_click(x: float, y: float, target: str | TargetInfo | None = None) -> None:
             tgt = switch_to(target) if target else active_target_box[0]
             self.capturer.focus(tgt)
@@ -214,6 +233,7 @@ class PythonReplEngine(BaseExecutionEngine):
             "move": move,
             "double_click": double_click,
             "right_click": right_click,
+            "drag": drag,
             "type_text": type_text,
             "press": press,
             "hotkey": hotkey,

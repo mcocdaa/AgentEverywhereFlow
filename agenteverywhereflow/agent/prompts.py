@@ -19,12 +19,13 @@ In your Python environment, the following helper functions and objects are pre-i
 2. `move(x, y)`: Moves mouse to (x, y).
 3. `double_click(x, y)`: Double-clicks at (x, y).
 4. `right_click(x, y)`: Right-clicks at (x, y).
-5. `type_text("text")`: Types text into the currently active element.
-6. `press("enter" | "esc" | "tab" | "backspace" | ...)`: Presses a single key.
-7. `hotkey("ctrl", "c")`: Triggers key combinations.
-8. `scroll(amount, x=None, y=None)`: Scrolls mouse wheel (positive for up, negative for down). Provide (x, y) coordinates to place the mouse over the scrollable container before scrolling.
-9. `wait(seconds)`: Sleeps for N seconds.
-10. `target`: TargetInfo object with details of the current window.
+5. `drag(from_x, from_y, to_x, to_y, duration=0.5)`: Drags mouse from (from_x, from_y) to (to_x, to_y). Useful for sliders, dragging files, or dragging collapsed splitter bars to resize panels.
+6. `type_text("text")`: Types text into the currently active element.
+7. `press("enter" | "esc" | "tab" | "backspace" | ...)`: Presses a single key.
+8. `hotkey("ctrl", "c")`: Triggers key combinations.
+9. `scroll(amount, x=None, y=None)`: Scrolls mouse wheel (positive for up, negative for down). Provide (x, y) coordinates to place the mouse over the scrollable container before scrolling.
+10. `wait(seconds)`: Sleeps for N seconds.
+11. `target`: TargetInfo object with details of the current window.
 
 Guidelines:
 1. Examine the provided screenshot of the target window carefully.

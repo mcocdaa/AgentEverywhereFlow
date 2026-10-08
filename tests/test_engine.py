@@ -64,3 +64,14 @@ wait(0.001)
     result = engine.execute(code, target)
     assert result.success is True
     assert result.output == ""
+
+
+def test_python_repl_engine_drag() -> None:
+    engine = PythonReplEngine()
+    target = get_mock_target()
+
+    code = """
+drag(10, 20, 30, 40, duration=0.01)
+"""
+    result = engine.execute(code, target)
+    assert result.success is True
