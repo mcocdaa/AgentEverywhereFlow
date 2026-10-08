@@ -59,6 +59,31 @@ def resolve_target(targets: list[TargetInfo], query: str) -> TargetInfo | None:
     return None
 
 
+def get_displays(targets: list[TargetInfo]) -> list[TargetInfo]:
+    """Filter and return only display targets."""
+    return [t for t in targets if t.target_type == TargetType.DISPLAY]
+
+
+def resolve_display(targets: list[TargetInfo], query: str | int) -> TargetInfo | None:
+    """Resolve a display target by number, ID, or substring."""
+    displays = get_displays(targets)
+    q_str = str(query).strip().lower()
+    if q_str.isdigit():
+        idx = int(q_str)
+        for d in displays:
+            if d.native_handle == idx:
+                return d
+        if 1 <= idx <= len(displays):
+            return displays[idx - 1]
+
+    for d in displays:
+        if d.target_id.lower() == q_str:
+            return d
+        if q_str in d.title.lower():
+            return d
+    return None
+
+
 class TargetSelector:
     """Provides interactive selection for displays and application windows."""
 

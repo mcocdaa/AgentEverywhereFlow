@@ -59,3 +59,10 @@ class BaseCapturer(ABC):
     def focus(self, target: TargetInfo) -> bool:
         """Bring the specified window target to the foreground."""
         pass
+
+    def move_window_to_display(self, target: TargetInfo, display: TargetInfo) -> bool:
+        """Relocate a window target into the bounding rectangle of the specified display.
+
+        Default implementation returns False; platform-specific capturers override this.
+        """
+        return False

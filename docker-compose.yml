@@ -1,0 +1,26 @@
+services:
+  aef-headless:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.headless
+    image: agenteverywhereflow:headless
+    container_name: aef-headless
+    restart: unless-stopped
+    ports:
+      - "8000:8000"   # AEFlow WebUI & REST API
+      - "5900:5900"   # Optional VNC inspection (connect with VNC viewer if ENABLE_VNC=true)
+    environment:
+      - PORT=8000
+      - DISPLAY_NUM=99
+      - RESOLUTION=1920x1080x24
+      - ENABLE_VNC=true
+      - AEF_MODEL_NAME=${AEF_MODEL_NAME:-deepseek-chat}
+      - AEF_API_KEY=${AEF_API_KEY:-}
+      - AEF_BASE_URL=${AEF_BASE_URL:-https://api.deepseek.com}
+      - AEF_DEFAULT_MODE=minimal
+    volumes:
+      - aef-data:/root/.aef
+    shm_size: "2gb"
+
+volumes:
+  aef-data:

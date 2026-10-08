@@ -13,7 +13,8 @@ from pydantic import BaseModel, Field, field_validator
 
 from agenteverywhereflow import __version__
 from agenteverywhereflow.capturer import get_capturer
-from agenteverywhereflow.capturer.selector import resolve_target
+from agenteverywhereflow.capturer.base import TargetType
+from agenteverywhereflow.capturer.selector import resolve_display, resolve_target
 from agenteverywhereflow.config import ExecutionMode
 from agenteverywhereflow.security.permission import ApprovalDecision, PermissionMode
 from agenteverywhereflow.server.webui import get_webui_dist_path, get_webui_status
@@ -31,6 +32,10 @@ class CreateSessionRequest(BaseModel):
     mode: ExecutionMode = Field(default=ExecutionMode.MINIMAL_PYTHON)
     permission_mode: PermissionMode = Field(default=PermissionMode.AUTO)
     session_id: str | None = Field(default=None)
+    move_to_display: str | None = Field(
+        default=None,
+        description="Optional display ID/number to automatically relocate the window target to (e.g. 'display:2' or '2')",
+    )
 
     @field_validator("mode", mode="before")
     @classmethod
@@ -55,6 +60,12 @@ class CreateSessionRequest(BaseModel):
             if v_lower in ("manual", "approval"):
                 return PermissionMode.MANUAL
         return v
+
+
+class MoveTargetRequest(BaseModel):
+    display_id: str = Field(
+        description="Target display ID or index to move the window to, e.g. 'display:2' or '2'"
+    )
 
 
 class UpdateSessionRequest(BaseModel):
@@ -247,6 +258,58 @@ def create_app() -> FastAPI:
             for t in targets
         ]
 
+    @app.post("/api/v1/targets/{target_id}/move")
+    def move_target(target_id: str, req: MoveTargetRequest) -> dict[str, Any]:
+        """Move a window target to the specified display (e.g. virtual display)."""
+        capturer = get_capturer()
+        all_targets = capturer.list_targets()
+        selected = resolve_target(all_targets, target_id)
+        if not selected:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"No window matching query '{target_id}' found.",
+            )
+        if selected.target_type != TargetType.WINDOW:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Only window targets can be relocated to another display.",
+            )
+        disp = resolve_display(all_targets, req.display_id)
+        if not disp:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"No display matching '{req.display_id}' found.",
+            )
+        success = capturer.move_window_to_display(selected, disp)
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to relocate window '{selected.title}' to {disp.title}.",
+            )
+        return {
+            "success": True,
+            "target": {
+                "target_id": selected.target_id,
+                "title": selected.title,
+                "rect": {
+                    "x": selected.rect.x,
+                    "y": selected.rect.y,
+                    "width": selected.rect.width,
+                    "height": selected.rect.height,
+                },
+            },
+            "display": {
+                "target_id": disp.target_id,
+                "title": disp.title,
+                "rect": {
+                    "x": disp.rect.x,
+                    "y": disp.rect.y,
+                    "width": disp.rect.width,
+                    "height": disp.rect.height,
+                },
+            },
+        }
+
     @app.post("/api/v1/sessions", status_code=status.HTTP_201_CREATED)
     def create_session(req: CreateSessionRequest) -> dict[str, Any]:
         """Create and bind a new conversational dialogue session."""
@@ -258,6 +321,12 @@ def create_app() -> FastAPI:
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"No window or screen matching query '{req.target_id}' found.",
             )
+
+        # Relocate target window to specified display if requested
+        if req.move_to_display and selected.target_type == TargetType.WINDOW:
+            disp = resolve_display(all_targets, req.move_to_display)
+            if disp:
+                capturer.move_window_to_display(selected, disp)
 
         session = session_manager.create_session(
             target=selected,

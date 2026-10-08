@@ -410,6 +410,51 @@ def list_targets(
     selector.display_selection_menu(targets)
 
 
+@app.command(name="move")
+def move(
+    target_query: str = typer.Argument(
+        ...,
+        help="Target window ID, title substring, or process name (e.g. '微信' or 'hwnd:0x40960')",
+    ),
+    to_display: str = typer.Option(
+        ...,
+        "--to-display",
+        "-d",
+        help="Destination display ID, number, or title substring (e.g. '2' or 'display:2')",
+    ),
+) -> None:
+    """Move an application window to a specific physical or virtual display."""
+    from agenteverywhereflow.capturer import get_capturer
+    from agenteverywhereflow.capturer.base import TargetType
+    from agenteverywhereflow.capturer.selector import resolve_display, resolve_target
+
+    capturer = get_capturer()
+    all_targets = capturer.list_targets()
+    tgt = resolve_target(all_targets, target_query)
+    if not tgt:
+        console.print(f"[bold red]❌ Target window '{target_query}' not found.[/bold red]")
+        raise typer.Exit(1)
+    if tgt.target_type != TargetType.WINDOW:
+        console.print("[bold red]❌ Only window targets can be relocated to a display.[/bold red]")
+        raise typer.Exit(1)
+
+    disp = resolve_display(all_targets, to_display)
+    if not disp:
+        console.print(f"[bold red]❌ Target display '{to_display}' not found.[/bold red]")
+        raise typer.Exit(1)
+
+    success = capturer.move_window_to_display(tgt, disp)
+    if success:
+        console.print(
+            f"[bold green]✅ Relocated window '{tgt.title}' to {disp.title} at ({tgt.rect.x}, {tgt.rect.y}).[/bold green]"
+        )
+    else:
+        console.print(
+            f"[bold red]❌ Failed to move window '{tgt.title}' to {disp.title}.[/bold red]"
+        )
+        raise typer.Exit(1)
+
+
 @app.command(name="summon")
 def summon(
     task: str = typer.Option(None, "--task", "-t", help="Task description to execute"),
@@ -461,6 +506,12 @@ def run(
     mode: ExecutionMode = typer.Option(
         ExecutionMode.MINIMAL_PYTHON, "--mode", "-m", help="Execution mode"
     ),
+    to_display: str | None = typer.Option(
+        None,
+        "--to-display",
+        "-d",
+        help="Optionally relocate the target window to a specific display (e.g. '2' or 'display:2') before running",
+    ),
     debug: bool = typer.Option(
         False, "--debug", "-d", help="Enable verbose debug logging and diagnostics"
     ),
@@ -470,7 +521,8 @@ def run(
 
     from agenteverywhereflow.agent.loop import AgentLoop
     from agenteverywhereflow.capturer import get_capturer
-    from agenteverywhereflow.capturer.selector import resolve_target
+    from agenteverywhereflow.capturer.base import TargetType
+    from agenteverywhereflow.capturer.selector import resolve_display, resolve_target
     from agenteverywhereflow.config import config
 
     if debug:
@@ -487,6 +539,18 @@ def run(
             "[dim]Tip: Run 'aef list-targets' to view all available Target IDs, handles, and indices.[/dim]"
         )
         raise typer.Exit(1)
+
+    if to_display and selected.target_type == TargetType.WINDOW:
+        disp = resolve_display(all_targets, to_display)
+        if disp:
+            if capturer.move_window_to_display(selected, disp):
+                console.print(
+                    f"[bold green]🖥️ Relocated '{selected.title}' to {disp.title} ({selected.rect.x}, {selected.rect.y})[/bold green]"
+                )
+        else:
+            console.print(
+                f"[yellow]⚠️ Target display '{to_display}' not found, skipping relocation.[/yellow]"
+            )
 
     if debug:
         handle_hex = f"0x{selected.native_handle:x}" if selected.native_handle else "N/A"

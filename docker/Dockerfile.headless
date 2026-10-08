@@ -1,0 +1,42 @@
+FROM python:3.11-slim
+
+# Prevent interactive prompts
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+
+# Install system dependencies for X11, Xvfb, fonts, and automation tools
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    xvfb \
+    x11-utils \
+    openbox \
+    x11vnc \
+    wmctrl \
+    xdotool \
+    libx11-6 \
+    libxext6 \
+    libxrender1 \
+    libxtst6 \
+    fonts-noto-cjk \
+    fonts-noto-color-emoji \
+    curl \
+    git \
+    procps \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy project files
+COPY pyproject.toml README.md ./
+COPY agenteverywhereflow/ agenteverywhereflow/
+
+# Install python package
+RUN pip install --no-cache-dir -e .
+
+# Copy entrypoint
+COPY docker/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+# Expose ports: 8000 for WebUI/API, 5900 for optional VNC live monitoring
+EXPOSE 8000 5900
+
+ENTRYPOINT ["/entrypoint.sh"]

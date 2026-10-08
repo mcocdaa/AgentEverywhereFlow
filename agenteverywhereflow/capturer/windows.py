@@ -481,3 +481,39 @@ class WindowsCapturer(BaseCapturer):
                 except Exception:
                     return False
         return False
+
+    def move_window_to_display(self, target: TargetInfo, display: TargetInfo) -> bool:
+        """Relocate a window target into the bounding rectangle of the specified display."""
+        if not is_windows or not target.native_handle:
+            return False
+        if target.target_type != TargetType.WINDOW or display.target_type != TargetType.DISPLAY:
+            return False
+
+        hwnd = target.native_handle
+        try:
+            # 1. Restore if minimized
+            if win32gui.IsIconic(hwnd):
+                win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
+
+            # 2. Get current window dimensions
+            _, _, w, h = self.get_window_bounds(hwnd)
+            target_w = min(w, max(400, display.rect.width - 40))
+            target_h = min(h, max(300, display.rect.height - 60))
+
+            # 3. Center inside target display
+            dest_x = display.rect.x + max(0, (display.rect.width - target_w) // 2)
+            dest_y = display.rect.y + max(0, (display.rect.height - target_h) // 2)
+
+            win32gui.SetWindowPos(
+                hwnd,
+                0,
+                dest_x,
+                dest_y,
+                target_w,
+                target_h,
+                win32con.SWP_NOZORDER | win32con.SWP_SHOWWINDOW,
+            )
+            target.rect = Rect(x=dest_x, y=dest_y, width=target_w, height=target_h)
+            return True
+        except Exception:
+            return False

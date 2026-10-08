@@ -134,3 +134,31 @@ class LinuxCapturer(BaseCapturer):
             except Exception:
                 return False
         return False
+
+    def move_window_to_display(self, target: TargetInfo, display: TargetInfo) -> bool:
+        """Relocate a window target into the bounding rectangle of the specified display."""
+        if target.target_type != TargetType.WINDOW or display.target_type != TargetType.DISPLAY:
+            return False
+        if shutil.which("wmctrl") and target.target_id.startswith("xwin:"):
+            win_id = target.target_id.split("xwin:")[1]
+            try:
+                dest_x = display.rect.x + max(0, (display.rect.width - target.rect.width) // 2)
+                dest_y = display.rect.y + max(0, (display.rect.height - target.rect.height) // 2)
+                subprocess.run(
+                    [
+                        "wmctrl",
+                        "-i",
+                        "-r",
+                        win_id,
+                        "-e",
+                        f"0,{dest_x},{dest_y},{target.rect.width},{target.rect.height}",
+                    ],
+                    check=True,
+                )
+                target.rect = Rect(
+                    x=dest_x, y=dest_y, width=target.rect.width, height=target.rect.height
+                )
+                return True
+            except Exception:
+                pass
+        return False
