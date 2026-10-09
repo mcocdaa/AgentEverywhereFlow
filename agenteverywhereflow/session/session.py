@@ -993,6 +993,14 @@ class ChatSession:
                         ],
                     }
                 )
+                self.emit_event(
+                    SessionEventType.STEP_FINISHED,
+                    step=turn_steps,
+                    payload={
+                        "status": "retry_prompted",
+                        "message": "No actionable code or completion declared in output. Prompted agent to take action.",
+                    },
+                )
 
         self.state = SessionState.WAITING_INPUT
         self.freeze_completed_turn()
