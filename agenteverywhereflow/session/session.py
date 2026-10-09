@@ -43,6 +43,47 @@ class TurnResult(BaseModel):
     error: str | None = None
 
 
+def extract_think_and_talk(
+    assistant_text: str,
+    raw_thinking: str = "",
+) -> tuple[str, str]:
+    """Separate Think (internal reasoning/CoT) and Talk (user-facing dialogue/explanation).
+
+    Returns:
+        (thinking_text, talk_text)
+    """
+    thinking_text = ""
+    clean_text = assistant_text
+
+    # 1. Structured reasoning_content from API (e.g. DeepSeek-R1, o1)
+    if raw_thinking:
+        thinking_text = str(raw_thinking).strip()
+
+    # 2. Inline <think>...</think> tags
+    if "<think>" in clean_text:
+        if "</think>" in clean_text:
+            think_matches = re.findall(r"<think>(.*?)</think>", clean_text, re.DOTALL)
+            if think_matches and not thinking_text:
+                thinking_text = "\n\n".join(m.strip() for m in think_matches if m.strip())
+            clean_text = re.sub(r"<think>.*?</think>", "", clean_text, flags=re.DOTALL).strip()
+        else:
+            parts = clean_text.split("<think>", 1)
+            if not thinking_text:
+                thinking_text = parts[1].strip()
+            clean_text = parts[0].strip()
+
+    # 3. Extract Talk: text outside code blocks and outside TASK_COMPLETED
+    code_pattern = r"```[a-zA-Z0-9_-]*\s*.*?\s*```"
+    parts = re.split(code_pattern, clean_text, flags=re.DOTALL)
+    talk_raw = "\n".join(p.strip() for p in parts if p.strip()).strip()
+
+    if "TASK_COMPLETED" in talk_raw:
+        talk_raw = talk_raw.split("TASK_COMPLETED")[0].strip()
+
+    talk_text = talk_raw
+    return thinking_text, talk_text
+
+
 class ChatSession:
     """Stateful multi-turn conversational session bound to designated target window(s) or screen."""
 
@@ -697,31 +738,30 @@ class ChatSession:
                         error=err_msg,
                     )
 
-            # Determine structured reasoning / CoT
-            thinking_text = ""
-            if raw_thinking:
-                thinking_text = str(raw_thinking).strip()
-            elif "<think>" in assistant_text and "</think>" in assistant_text:
-                think_match = re.search(r"<think>(.*?)</think>", assistant_text, re.DOTALL)
-                if think_match:
-                    thinking_text = think_match.group(1).strip()
-
-            if not thinking_text:
-                if is_minimal:
-                    parts = re.split(r"```(?:python)?\s*.*?\s*```", assistant_text, flags=re.DOTALL)
-                    outside = "\n".join(p.strip() for p in parts if p.strip()).strip()
-                    thinking_text = outside or assistant_text
-                else:
-                    parts = re.split(r"```(?:json)?\s*.*?\s*```", assistant_text, flags=re.DOTALL)
-                    outside = "\n".join(p.strip() for p in parts if p.strip()).strip()
-                    thinking_text = outside or assistant_text
+            # Determine Think (internal reasoning) and Talk (communication to user)
+            thinking_text, talk_text = extract_think_and_talk(
+                assistant_text=assistant_text,
+                raw_thinking=raw_thinking,
+            )
 
             self.messages.append({"role": "assistant", "content": assistant_text})
-            self.emit_event(
-                SessionEventType.REASONING,
-                step=turn_steps,
-                payload={"thinking": thinking_text, "content": assistant_text},
-            )
+
+            # Emit Think (internal CoT) only if genuine reasoning exists
+            if thinking_text:
+                self.emit_event(
+                    SessionEventType.REASONING,
+                    step=turn_steps,
+                    payload={"thinking": thinking_text, "content": thinking_text},
+                )
+
+            # Emit Talk (communication to user) if model spoke to the user and did not declare completion
+            has_task_completed = "TASK_COMPLETED" in assistant_text
+            if talk_text and not has_task_completed:
+                self.emit_event(
+                    SessionEventType.MESSAGE,
+                    step=turn_steps,
+                    payload={"text": talk_text, "content": talk_text},
+                )
 
             # 5. Extract and Validate Actions
             executed_action = False
@@ -962,49 +1002,82 @@ class ChatSession:
                         {"role": "user", "content": [{"type": "text", "text": feedback}]}
                     )
 
-            # 6. Check Completion
-            if "TASK_COMPLETED" in assistant_text:
+            # 6. Check Completion or Conversational Response
+            if has_task_completed:
                 if not executed_action or action_success:
                     summary = assistant_text.split("TASK_COMPLETED")[-1].strip(": \n")
+                    final_resp = summary or talk_text or "Instruction completed."
                     self.state = SessionState.WAITING_INPUT
                     self.freeze_completed_turn()
                     self.save()
                     self.emit_event(
                         SessionEventType.TASK_COMPLETED,
                         step=turn_steps,
-                        payload={"summary": summary or "Instruction completed."},
+                        payload={"summary": final_resp, "conversational": False},
+                    )
+                    self.emit_event(
+                        SessionEventType.TURN_FINISHED,
+                        step=turn_steps,
+                        payload={"status": "completed", "conversational": False},
                     )
                     return TurnResult(
                         success=True,
                         completed=True,
-                        response=summary or "Instruction completed successfully.",
+                        response=final_resp,
                         steps_executed=turn_steps,
                     )
 
-            if not executed_action and "TASK_COMPLETED" not in assistant_text:
-                self.messages.append(
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "text",
-                                "text": "No executable code block or TASK_COMPLETED was found. Please provide an executable action or conclude with TASK_COMPLETED.",
-                            }
-                        ],
-                    }
-                )
-                self.emit_event(
-                    SessionEventType.STEP_FINISHED,
-                    step=turn_steps,
-                    payload={
-                        "status": "retry_prompted",
-                        "message": "No actionable code or completion declared in output. Prompted agent to take action.",
-                    },
-                )
+            if not executed_action and not has_task_completed:
+                if talk_text:
+                    # Model answered a question, asked for clarification, or responded with dialogue
+                    self.state = SessionState.WAITING_INPUT
+                    self.freeze_completed_turn()
+                    self.save()
+                    self.emit_event(
+                        SessionEventType.TASK_COMPLETED,
+                        step=turn_steps,
+                        payload={"summary": talk_text, "conversational": True},
+                    )
+                    self.emit_event(
+                        SessionEventType.TURN_FINISHED,
+                        step=turn_steps,
+                        payload={"status": "completed", "conversational": True},
+                    )
+                    return TurnResult(
+                        success=True,
+                        completed=True,
+                        response=talk_text,
+                        steps_executed=turn_steps,
+                    )
+                else:
+                    self.messages.append(
+                        {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": "No executable code block or response was found. Please provide an action or message.",
+                                }
+                            ],
+                        }
+                    )
+                    self.emit_event(
+                        SessionEventType.STEP_FINISHED,
+                        step=turn_steps,
+                        payload={
+                            "status": "retry_prompted",
+                            "message": "No actionable code or dialogue response found. Prompted agent to take action.",
+                        },
+                    )
 
         self.state = SessionState.WAITING_INPUT
         self.freeze_completed_turn()
         self.save()
+        self.emit_event(
+            SessionEventType.TURN_FINISHED,
+            step=turn_steps,
+            payload={"status": "step_limit_reached"},
+        )
         return TurnResult(
             success=True,
             completed=False,

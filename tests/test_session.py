@@ -9,6 +9,7 @@ from agenteverywhereflow.capturer.base import Rect, TargetInfo, TargetType
 from agenteverywhereflow.config import ExecutionMode, PermissionMode
 from agenteverywhereflow.security.permission import ApprovalDecision, ApprovalRequest
 from agenteverywhereflow.session import ChatSession, SessionEventType, SessionManager, SessionState
+from agenteverywhereflow.session.session import extract_think_and_talk
 
 
 def _make_dummy_target(name: str = "Test Window") -> TargetInfo:
@@ -265,3 +266,144 @@ def test_chat_session_abort_execution() -> None:
 
     has_aborted_event = any(e.event_type == SessionEventType.ABORTED for e in events_received)
     assert has_aborted_event is True
+
+
+def test_extract_think_and_talk_decoupling() -> None:
+    """Verify clean decoupling of internal Think, user-facing Talk, and CodeAct Act."""
+    # Case 1: Model with <think> tag and code
+    text1 = (
+        "<think>The user wants to open the search bar. I need to click (100, 200).</think>\n"
+        "Opening search bar now...\n"
+        "```python\nclick(100, 200)\n```"
+    )
+    th1, ta1 = extract_think_and_talk(text1)
+    assert th1 == "The user wants to open the search bar. I need to click (100, 200)."
+    assert ta1 == "Opening search bar now..."
+
+    # Case 2: Model asking for clarification (pure dialogue, no code, no think tags)
+    text2 = "已为您定位到微信窗口。请问您希望发送什么文字内容给文件传输助手？"
+    th2, ta2 = extract_think_and_talk(text2)
+    assert th2 == ""
+    assert ta2 == text2
+
+    # Case 3: API structured reasoning (DeepSeek-R1 / o1)
+    text3 = "分析当前布局：左侧导航栏，右侧聊天区。"
+    th3, ta3 = extract_think_and_talk(
+        text3, raw_thinking="Examining window layout in visual observation."
+    )
+    assert th3 == "Examining window layout in visual observation."
+    assert ta3 == "分析当前布局：左侧导航栏，右侧聊天区。"
+
+    # Case 4: TASK_COMPLETED extraction
+    text4 = "点击完成。\n```python\nclick(50, 50)\n```\nTASK_COMPLETED: 任务已完成。"
+    th4, ta4 = extract_think_and_talk(text4)
+    assert th4 == ""
+    assert ta4 == "点击完成。"
+
+
+def test_chat_session_conversational_turn_without_code() -> None:
+    """Verify that a conversational turn without code executes gracefully without false retry or scolding."""
+    target = _make_dummy_target("WeChat Test")
+
+    # Planner simulates answering an inquiry about layout
+    def layout_planner(messages: list[dict[str, Any]], tgt: TargetInfo, step: int) -> str:
+        return (
+            "<think>Analyzing window structure: 3 vertical panels detected.</think>\n"
+            "当前微信窗口为三栏式布局：①左侧导航栏 ②中间会话列表 ③右侧聊天区。"
+        )
+
+    events_emitted = []
+    session = ChatSession(
+        target=target,
+        mode=ExecutionMode.MINIMAL_PYTHON,
+        permission_mode=PermissionMode.AUTO,
+        planner_func=layout_planner,
+    )
+    session.capturer.capture = MagicMock(return_value=Image.new("RGB", (100, 100), color="white"))
+    session.capturer.focus = MagicMock()
+    session.add_listener(events_emitted.append)
+
+    res = session.execute_turn("分析当前窗口界面布局与主要元素")
+    assert res.success is True
+    assert res.completed is True
+    assert "三栏式布局" in res.response
+    assert session.state == SessionState.WAITING_INPUT
+
+    # Verify event types emitted
+    event_types = [e.event_type for e in events_emitted]
+    assert SessionEventType.REASONING in event_types
+    assert SessionEventType.MESSAGE in event_types
+    assert SessionEventType.TURN_FINISHED in event_types
+
+    # Ensure REASONING has thinking and MESSAGE has user-facing text
+    reasoning_ev = next(e for e in events_emitted if e.event_type == SessionEventType.REASONING)
+    assert "3 vertical panels" in reasoning_ev.payload["thinking"]
+
+    message_ev = next(e for e in events_emitted if e.event_type == SessionEventType.MESSAGE)
+    assert "三栏式布局" in message_ev.payload["text"]
+
+    # Verify conversational TASK_COMPLETED payload has conversational=True
+    tc_ev = next(e for e in events_emitted if e.event_type == SessionEventType.TASK_COMPLETED)
+    assert tc_ev.payload.get("conversational") is True
+
+    # Crucial: verify that NO retry error or scolding prompt was appended to session.messages
+    retry_prompts = [
+        m for m in session.messages if "No executable code block" in str(m.get("content", ""))
+    ]
+    assert len(retry_prompts) == 0
+
+
+def test_chat_session_conversational_clarification_flow() -> None:
+    """Verify multi-turn flow where model first asks for clarification, then executes on user reply."""
+    target = _make_dummy_target("WeChat Test")
+
+    responses = [
+        # Turn 1: Model asks clarification
+        "请问您想给文件传输助手发送什么文字内容？",
+        # Turn 2: User provides content -> Model executes code and finishes
+        "正在输入消息...\n```python\nwait(0.1)\n```\nTASK_COMPLETED: 已向「文件传输助手」发送消息「你好呀」。",
+    ]
+    call_idx = 0
+
+    def mock_agent(messages: list[dict[str, Any]], tgt: TargetInfo, step: int) -> str:
+        nonlocal call_idx
+        resp = responses[call_idx]
+        call_idx += 1
+        return resp
+
+    session = ChatSession(
+        target=target,
+        mode=ExecutionMode.MINIMAL_PYTHON,
+        permission_mode=PermissionMode.AUTO,
+        planner_func=mock_agent,
+    )
+    session.capturer.capture = MagicMock(return_value=Image.new("RGB", (100, 100), color="white"))
+    session.capturer.focus = MagicMock()
+
+    # Turn 1: User gives vague instruction
+    turn1_events = []
+    session.add_listener(turn1_events.append)
+    res1 = session.execute_turn("帮我给文件传输助手发个消息")
+
+    assert res1.success is True
+    assert res1.completed is True
+    assert "请问您想给文件传输助手发送什么文字内容？" in res1.response
+    assert session.state == SessionState.WAITING_INPUT
+    assert any(e.event_type == SessionEventType.MESSAGE for e in turn1_events)
+
+    # Turn 2: User specifies content
+    turn2_events = []
+    session.add_listener(turn2_events.append)
+    res2 = session.execute_turn("发送'你好呀'")
+
+    assert res2.success is True
+    assert res2.completed is True
+    assert "你好呀" in res2.response
+    assert session.state == SessionState.WAITING_INPUT
+
+    # In turn 2, an action was executed and finished with real TASK_COMPLETED
+    t2_completed_ev = next(
+        e for e in turn2_events if e.event_type == SessionEventType.TASK_COMPLETED
+    )
+    assert t2_completed_ev.payload.get("conversational") is False
+    assert "你好呀" in t2_completed_ev.payload["summary"]

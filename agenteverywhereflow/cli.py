@@ -730,15 +730,26 @@ def chat(
                     console.print(f"  [bold red]❌ Execution Failed:[/bold red] {err}")
                 if out and out.strip():
                     console.print(f"  [dim]Output: {escape(out.strip())}[/dim]")
-        elif event.event_type == SessionEventType.TASK_COMPLETED:
-            summary = event.payload.get("summary", "Task completed.")
-            console.print(
-                Panel(
-                    f"[bold green]{summary}[/bold green]",
-                    title="🎉 Instruction Completed",
-                    border_style="bold green",
+        elif event.event_type in (SessionEventType.MESSAGE, SessionEventType.TALK):
+            text = event.payload.get("text", "") or event.payload.get("content", "")
+            if text and text.strip():
+                console.print(
+                    Panel(
+                        text.strip(),
+                        title="💬 Agent",
+                        border_style="cyan",
+                    )
                 )
-            )
+        elif event.event_type == SessionEventType.TASK_COMPLETED:
+            if not event.payload.get("conversational"):
+                summary = event.payload.get("summary", "Task completed.")
+                console.print(
+                    Panel(
+                        f"[bold green]{summary}[/bold green]",
+                        title="🎉 Instruction Completed",
+                        border_style="bold green",
+                    )
+                )
         elif event.event_type == SessionEventType.ERROR:
             err = event.payload.get("error", "Unknown error")
             console.print(
