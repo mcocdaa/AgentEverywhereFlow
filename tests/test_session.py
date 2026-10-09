@@ -407,3 +407,78 @@ def test_chat_session_conversational_clarification_flow() -> None:
     )
     assert t2_completed_ev.payload.get("conversational") is False
     assert "你好呀" in t2_completed_ev.payload["summary"]
+
+
+def test_chat_session_meta_question_unwrapping() -> None:
+    """Verify that when a model outputs a question wrapped in TASK_COMPLETED meta-phrasing, it unwraps and marks conversational."""
+    target = _make_dummy_target("WeChat Test")
+
+    def questioning_planner(messages: list[dict[str, Any]], tgt: TargetInfo, step: int) -> str:
+        return (
+            "<think>The user wants me to ask them a question directly.</think>\n"
+            "TASK_COMPLETED: 已按你的要求在此对话中向你提问——「你希望我用这个微信窗口帮你完成的最核心任务是什么？（例如自动回复、定时发送、信息监控等）」"
+        )
+
+    events_emitted = []
+    session = ChatSession(
+        target=target,
+        mode=ExecutionMode.MINIMAL_PYTHON,
+        permission_mode=PermissionMode.AUTO,
+        planner_func=questioning_planner,
+    )
+    session.capturer.capture = MagicMock(return_value=Image.new("RGB", (100, 100), color="white"))
+    session.capturer.focus = MagicMock()
+    session.add_listener(events_emitted.append)
+
+    res = session.execute_turn("不不，问我一个事情，就在这里")
+    assert res.success is True
+    assert res.completed is True
+    # The response must be unwrapped to the direct question
+    expected_q = (
+        "你希望我用这个微信窗口帮你完成的最核心任务是什么？（例如自动回复、定时发送、信息监控等）"
+    )
+    assert res.response == expected_q
+
+    # Crucial: MESSAGE event must contain the clean question, and TASK_COMPLETED must have conversational=True
+    msg_ev = next(e for e in events_emitted if e.event_type == SessionEventType.MESSAGE)
+    assert msg_ev.payload["text"] == expected_q
+
+    tc_ev = next(e for e in events_emitted if e.event_type == SessionEventType.TASK_COMPLETED)
+    assert tc_ev.payload.get("conversational") is True
+
+
+def test_chat_session_events_persistence_and_restore() -> None:
+    """Verify that all emitted events are recorded on session and restored from disk storage."""
+    target = _make_dummy_target("Persistence Target")
+
+    def simple_planner(messages: list[dict[str, Any]], tgt: TargetInfo, step: int) -> str:
+        return "Thinking...\n```python\nwait(0.1)\n```\nTASK_COMPLETED: Done."
+
+    session = ChatSession(
+        target=target,
+        session_id="test-events-persist-99",
+        mode=ExecutionMode.MINIMAL_PYTHON,
+        permission_mode=PermissionMode.AUTO,
+        planner_func=simple_planner,
+    )
+    session.capturer.capture = MagicMock(return_value=Image.new("RGB", (100, 100), color="white"))
+    session.capturer.focus = MagicMock()
+
+    res = session.execute_turn("Test instruction")
+    assert res.success is True
+    assert len(session.events) > 0
+
+    # Events must include turn_start, observe, action_proposed, action_executed, task_completed, turn_finished
+    event_types = {e.event_type for e in session.events}
+    assert SessionEventType.TURN_START in event_types
+    assert SessionEventType.TASK_COMPLETED in event_types
+    assert SessionEventType.TURN_FINISHED in event_types
+
+    # Save to disk
+    session.save()
+
+    # Restore from disk
+    restored = ChatSession.restore("test-events-persist-99")
+    assert restored is not None
+    assert len(restored.events) == len(session.events)
+    assert restored.events[-1].event_type == session.events[-1].event_type

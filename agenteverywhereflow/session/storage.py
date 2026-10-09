@@ -85,6 +85,7 @@ class SessionStorage:
         targets: list[TargetInfo] | None = None,
         recorded_steps: list[dict[str, Any]] | None = None,
         title: str = "",
+        events: list[dict[str, Any]] | None = None,
     ) -> Path:
         """Atomically persist session metadata and conversational trajectory to disk."""
         s_dir = self._get_session_dir(session_id)
@@ -170,7 +171,24 @@ class SessionStorage:
             with open(rec_file, "w", encoding="utf-8") as f:
                 json.dump(recorded_steps, f, indent=2, ensure_ascii=False)
 
+        if events is not None:
+            ev_file = s_dir / "events.json"
+            with open(ev_file, "w", encoding="utf-8") as f:
+                json.dump(events, f, indent=2, ensure_ascii=False)
+
         return s_dir
+
+    def load_events(self, session_id: str) -> list[dict[str, Any]]:
+        """Load session event stream trajectory from disk."""
+        ev_file = self._get_session_dir(session_id) / "events.json"
+        if not ev_file.exists():
+            return []
+        try:
+            with open(ev_file, encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            logger.warning(f"Failed to load events for {session_id}: {e}")
+            return []
 
     def load_metadata(self, session_id: str) -> SessionMetadata | None:
         """Load session metadata header from disk."""

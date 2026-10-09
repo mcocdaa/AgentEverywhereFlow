@@ -84,6 +84,35 @@ def extract_think_and_talk(
     return thinking_text, talk_text
 
 
+def clean_conversational_text(text: str) -> str:
+    """Unwrap robotic meta-reporting phrasing into direct natural speech."""
+    s = text.strip()
+    # Strip patterns like: 已按你的要求在此对话中向你提问——「...」 or 已向你提问：... or 已向用户提问：“...”
+    match = re.search(
+        r"(?:向你提问|向您提问|向用户提问|在此对话中提问)[—\-:：\s]*[「\"“](.*?)[」\"”]",
+        s,
+        re.DOTALL,
+    )
+    if match:
+        return match.group(1).strip()
+    return s
+
+
+def is_conversational_turn(
+    executed_action: bool,
+    text: str,
+) -> bool:
+    """Determine if a step conclusion is conversational dialogue rather than GUI action completion."""
+    if not executed_action:
+        return True
+    s = text.strip()
+    if s.endswith(("?", "？")):
+        return True
+    if any(k in s for k in ("请问", "向你提问", "想问你", "请确认", "请告诉我")):
+        return True
+    return False
+
+
 class ChatSession:
     """Stateful multi-turn conversational session bound to designated target window(s) or screen."""
 
@@ -127,6 +156,7 @@ class ChatSession:
 
         self.messages: list[dict[str, Any]] = []
         self.recorded_steps: list[dict[str, Any]] = []
+        self.events: list[SessionEvent] = []
         self._init_system_prompt()
 
         # Approval coordination
@@ -193,6 +223,7 @@ class ChatSession:
             step=step,
             payload=payload or {},
         )
+        self.events.append(event)
         for listener in list(self.listeners):
             try:
                 listener(event)
@@ -298,6 +329,7 @@ class ChatSession:
         """Reset conversation context while retaining system prompt and current target."""
         self.messages.clear()
         self.recorded_steps.clear()
+        self.events.clear()
         self._init_system_prompt()
         self.state = SessionState.IDLE
         self.turn_count = 0
@@ -388,6 +420,7 @@ class ChatSession:
             created_at=self.created_at,
             recorded_steps=self.recorded_steps,
             title=self.title,
+            events=[e.model_dump() for e in self.events],
         )
 
     @classmethod
@@ -461,6 +494,9 @@ class ChatSession:
         if raw_messages:
             session.messages = raw_messages
         session.recorded_steps = session_storage.load_recorded_steps(session_id)
+        raw_events = session_storage.load_events(session_id)
+        if raw_events:
+            session.events = [SessionEvent.model_validate(e) for e in raw_events]
         return session
 
     def wait_for_server_approval(self, request: ApprovalRequest) -> ApprovalDecision:
@@ -757,10 +793,11 @@ class ChatSession:
             # Emit Talk (communication to user) if model spoke to the user and did not declare completion
             has_task_completed = "TASK_COMPLETED" in assistant_text
             if talk_text and not has_task_completed:
+                clean_talk = clean_conversational_text(talk_text)
                 self.emit_event(
                     SessionEventType.MESSAGE,
                     step=turn_steps,
-                    payload={"text": talk_text, "content": talk_text},
+                    payload={"text": clean_talk, "content": clean_talk},
                 )
 
             # 5. Extract and Validate Actions
@@ -1005,20 +1042,36 @@ class ChatSession:
             # 6. Check Completion or Conversational Response
             if has_task_completed:
                 if not executed_action or action_success:
-                    summary = assistant_text.split("TASK_COMPLETED")[-1].strip(": \n")
+                    raw_summary = assistant_text.split("TASK_COMPLETED")[-1].strip(": \n")
+                    summary = (
+                        clean_conversational_text(raw_summary)
+                        if not executed_action
+                        else raw_summary
+                    )
                     final_resp = summary or talk_text or "Instruction completed."
+                    is_conv = is_conversational_turn(executed_action, final_resp)
+
                     self.state = SessionState.WAITING_INPUT
                     self.freeze_completed_turn()
                     self.save()
+
+                    if is_conv:
+                        # For conversational dialogue, emit MESSAGE so it appears in assistant speech bubble
+                        self.emit_event(
+                            SessionEventType.MESSAGE,
+                            step=turn_steps,
+                            payload={"text": final_resp, "content": final_resp},
+                        )
+
                     self.emit_event(
                         SessionEventType.TASK_COMPLETED,
                         step=turn_steps,
-                        payload={"summary": final_resp, "conversational": False},
+                        payload={"summary": final_resp, "conversational": is_conv},
                     )
                     self.emit_event(
                         SessionEventType.TURN_FINISHED,
                         step=turn_steps,
-                        payload={"status": "completed", "conversational": False},
+                        payload={"status": "completed", "conversational": is_conv},
                     )
                     return TurnResult(
                         success=True,
@@ -1029,6 +1082,7 @@ class ChatSession:
 
             if not executed_action and not has_task_completed:
                 if talk_text:
+                    clean_talk = clean_conversational_text(talk_text)
                     # Model answered a question, asked for clarification, or responded with dialogue
                     self.state = SessionState.WAITING_INPUT
                     self.freeze_completed_turn()
@@ -1036,7 +1090,7 @@ class ChatSession:
                     self.emit_event(
                         SessionEventType.TASK_COMPLETED,
                         step=turn_steps,
-                        payload={"summary": talk_text, "conversational": True},
+                        payload={"summary": clean_talk, "conversational": True},
                     )
                     self.emit_event(
                         SessionEventType.TURN_FINISHED,
@@ -1046,7 +1100,7 @@ class ChatSession:
                     return TurnResult(
                         success=True,
                         completed=True,
-                        response=talk_text,
+                        response=clean_talk,
                         steps_executed=turn_steps,
                     )
                 else:

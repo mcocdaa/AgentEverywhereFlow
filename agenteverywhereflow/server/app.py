@@ -429,6 +429,7 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
         return {
             "session_id": session.session_id,
+            "events": [e.model_dump() for e in getattr(session, "events", [])],
             "recorded_steps": getattr(session, "recorded_steps", []),
             "turn_count": session.turn_count,
             "total_steps": session.total_steps,
