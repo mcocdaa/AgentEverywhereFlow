@@ -55,3 +55,6 @@ class WorkflowDefinition(BaseModel):
         default_factory=dict,
         description="Custom metadata, e.g. source session_id, model, token stats",
     )
+
+
+WorkflowSpec = WorkflowDefinition

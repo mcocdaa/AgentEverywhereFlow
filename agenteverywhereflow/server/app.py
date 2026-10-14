@@ -20,6 +20,8 @@ from agenteverywhereflow.security.permission import ApprovalDecision, Permission
 from agenteverywhereflow.server.webui import get_webui_dist_path, get_webui_status
 from agenteverywhereflow.session.manager import session_manager
 from agenteverywhereflow.session.state import SessionEvent, SessionEventType, SessionState
+from agenteverywhereflow.workflow.exporter import WorkflowExporter
+from agenteverywhereflow.workflow.runner import WorkflowRunner
 
 logger = logging.getLogger(__name__)
 
@@ -91,6 +93,22 @@ class UpdatePermissionRequest(BaseModel):
 
 class SwitchTargetRequest(BaseModel):
     target_id: str = Field(description="New target identifier to bind session to")
+
+
+class RunWorkflowRequest(BaseModel):
+    workflow_yaml: str | None = Field(
+        default=None, description="Declarative YAML workflow definition to execute"
+    )
+    session_id: str | None = Field(
+        default=None, description="Source session ID to build and replay workflow from"
+    )
+    target_id: str | None = Field(
+        default=None, description="Optional target ID or window title override for execution"
+    )
+    dry_run: bool = Field(
+        default=False, description="Validate and inspect planned steps without GUI side effects"
+    )
+    step_delay: float = Field(default=0.5, description="Delay between workflow steps in seconds")
 
 
 def create_app() -> FastAPI:
@@ -598,6 +616,90 @@ def create_app() -> FastAPI:
             "status": "ok",
             "session_id": session.session_id,
             "title": getattr(session, "title", "") or session.target.title,
+        }
+
+    @app.get("/api/v1/sessions/{session_id}/export")
+    def export_session(
+        session_id: str,
+        format: str = "python",
+        workflow_name: str | None = None,
+    ) -> dict[str, Any]:
+        """Export recorded session trajectory to Python script, YAML workflow, or Markdown report."""
+        session = _resolve_session(session_id)
+        if not session:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+
+        exporter = WorkflowExporter()
+        spec = exporter.from_session(session, name=workflow_name or f"session_{session_id}")
+        fmt = format.lower().strip()
+        if fmt == "python":
+            content = exporter.to_python_script(spec)
+        elif fmt == "yaml":
+            content = exporter.to_yaml(spec)
+        elif fmt == "markdown":
+            content = exporter.to_markdown(spec)
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Unsupported export format '{format}'. Expected 'python', 'yaml', or 'markdown'.",
+            )
+
+        return {
+            "session_id": session_id,
+            "format": fmt,
+            "content": content,
+            "step_count": len(spec.steps),
+            "workflow": spec.model_dump(mode="json"),
+        }
+
+    @app.post("/api/v1/workflows/run")
+    def run_workflow(req: RunWorkflowRequest) -> dict[str, Any]:
+        """Validate (dry-run) or execute a recorded workflow from YAML or a session ID."""
+        exporter = WorkflowExporter()
+        if req.workflow_yaml:
+            try:
+                spec = exporter.from_yaml(req.workflow_yaml)
+            except Exception as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Invalid workflow_yaml: {exc}",
+                ) from exc
+        elif req.session_id:
+            session = _resolve_session(req.session_id)
+            if not session:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Session '{req.session_id}' not found",
+                )
+            spec = exporter.from_session(session)
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Either 'workflow_yaml' or 'session_id' must be provided.",
+            )
+
+        if req.target_id:
+            for step in spec.steps:
+                step.target = req.target_id
+
+        if req.dry_run:
+            return {
+                "status": "dry_run",
+                "steps": len(spec.steps),
+                "steps_executed": len(spec.steps),
+                "workflow": spec.model_dump(mode="json"),
+            }
+
+        runner = WorkflowRunner()
+        speed = max(0.1, 0.3 / max(0.05, req.step_delay))
+        result = runner.play(spec, speed=speed, dry_run=False)
+        return {
+            "status": "completed" if result.success else "failed",
+            "steps_executed": result.executed_steps,
+            "total_steps": result.total_steps,
+            "elapsed_seconds": result.elapsed_seconds,
+            "error": result.error or None,
+            "workflow": spec.model_dump(mode="json"),
         }
 
     @app.delete("/api/v1/sessions/{session_id}")

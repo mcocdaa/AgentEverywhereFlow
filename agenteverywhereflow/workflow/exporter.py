@@ -343,21 +343,30 @@ class WorkflowExporter:
         return steps
 
     @classmethod
+    def from_yaml(cls, yaml_content: str) -> WorkflowDefinition:
+        """Load a WorkflowDefinition from a YAML string."""
+        data = yaml.safe_load(yaml_content)
+        if not isinstance(data, dict):
+            raise ValueError("Invalid workflow YAML content: expected mapping.")
+        return WorkflowDefinition.model_validate(data)
+
+    @classmethod
+    def to_yaml(cls, workflow: WorkflowDefinition) -> str:
+        """Serialize workflow definition to declarative YAML string."""
+        dump_data = workflow.model_dump(mode="json")
+        return str(yaml.safe_dump(dump_data, sort_keys=False, allow_unicode=True, indent=2))
+
+    @classmethod
     def export_to_yaml(cls, workflow: WorkflowDefinition, output_path: Path | str) -> Path:
         """Export workflow definition to declarative YAML format."""
         out = Path(output_path)
         out.parent.mkdir(parents=True, exist_ok=True)
-        dump_data = workflow.model_dump()
-        with open(out, "w", encoding="utf-8") as f:
-            yaml.safe_dump(dump_data, f, sort_keys=False, allow_unicode=True, indent=2)
+        out.write_text(cls.to_yaml(workflow), encoding="utf-8")
         return out
 
     @classmethod
-    def export_to_python(cls, workflow: WorkflowDefinition, output_path: Path | str) -> Path:
-        """Export workflow to a standalone, zero-LLM executable Python script."""
-        out = Path(output_path)
-        out.parent.mkdir(parents=True, exist_ok=True)
-
+    def to_python_script(cls, workflow: WorkflowDefinition) -> str:
+        """Render workflow to a standalone, zero-LLM executable Python script string."""
         created_str = datetime.fromtimestamp(workflow.created_at).strftime("%Y-%m-%d %H:%M:%S")
 
         lines: list[str] = [
@@ -519,7 +528,54 @@ class WorkflowExporter:
         lines.append('if __name__ == "__main__":')
         lines.append("    main()")
         lines.append("")
+        return "\n".join(lines)
 
-        with open(out, "w", encoding="utf-8") as f:
-            f.write("\n".join(lines))
+    @classmethod
+    def to_markdown(cls, workflow: WorkflowDefinition) -> str:
+        """Render a clean Markdown summary with embedded YAML and Python script."""
+        created_str = datetime.fromtimestamp(workflow.created_at).strftime("%Y-%m-%d %H:%M:%S")
+        yaml_str = cls.to_yaml(workflow).strip()
+        py_str = cls.to_python_script(workflow).strip()
+        target_lines = [
+            f"- **{t.title}** (`{t.target_id}`, {t.rect.get('width', 0)}x{t.rect.get('height', 0)})"
+            for t in workflow.targets
+        ] or ["- None"]
+        step_lines = [
+            f"{s.step_number}. **`{s.action}`** on `{s.target or 'active'}` — {s.description or s.action}"
+            for s in workflow.steps
+        ] or ["_No recorded steps._"]
+
+        return "\n".join(
+            [
+                f"# Workflow Report: {workflow.name}",
+                "",
+                f"- **Description**: {workflow.description}",
+                f"- **Created At**: {created_str}",
+                f"- **Total Steps**: {len(workflow.steps)}",
+                "",
+                "## Bound Targets",
+                *target_lines,
+                "",
+                "## Recorded Steps",
+                *step_lines,
+                "",
+                "## Declarative YAML Specification",
+                "```yaml",
+                yaml_str,
+                "```",
+                "",
+                "## Standalone Python Replay Script",
+                "```python",
+                py_str,
+                "```",
+                "",
+            ]
+        )
+
+    @classmethod
+    def export_to_python(cls, workflow: WorkflowDefinition, output_path: Path | str) -> Path:
+        """Export workflow to a standalone, zero-LLM executable Python script."""
+        out = Path(output_path)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(cls.to_python_script(workflow), encoding="utf-8")
         return out

@@ -3,6 +3,7 @@
 from agenteverywhereflow.workflow.exporter import WorkflowExporter
 from agenteverywhereflow.workflow.models import (
     WorkflowDefinition,
+    WorkflowSpec,
     WorkflowStep,
     WorkflowTarget,
 )
@@ -13,6 +14,7 @@ __all__ = [
     "WorkflowExporter",
     "WorkflowReplayResult",
     "WorkflowRunner",
+    "WorkflowSpec",
     "WorkflowStep",
     "WorkflowTarget",
 ]

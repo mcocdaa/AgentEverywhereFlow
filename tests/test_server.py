@@ -155,3 +155,91 @@ def test_server_webui_serves_root() -> None:
     resp = client.get("/")
     assert resp.status_code == 200
     assert "AgentEverywhereFlow" in resp.text
+
+
+def test_server_session_export_and_workflow_run() -> None:
+    """Verify session export (python, yaml, markdown) and workflow dry-run / replay APIs."""
+    app = create_app()
+    client = TestClient(app)
+    session_manager.clear()
+
+    with patch("agenteverywhereflow.server.app.get_capturer") as mock_capturer_fn:
+        mock_capturer = MagicMock()
+        mock_capturer.list_targets.return_value = [_mock_target()]
+        mock_capturer_fn.return_value = mock_capturer
+
+        # Create session and populate recorded steps
+        resp = client.post(
+            "/api/v1/sessions",
+            json={
+                "target_id": "display:1",
+                "mode": "minimal",
+                "permission_mode": "auto",
+                "session_id": "export-test-session",
+            },
+        )
+        assert resp.status_code == 201
+
+        session = session_manager.get_session("export-test-session")
+        assert session is not None
+        session.recorded_steps = [
+            {
+                "turn": 1,
+                "step": 1,
+                "mode": "minimal",
+                "code": "click(120, 240)\ntype_text('aef-api')\nwait(0.2)",
+                "target_id": "display:1",
+                "target_title": "Primary Screen",
+            }
+        ]
+
+        # 1. Export as Python
+        py_resp = client.get(
+            "/api/v1/sessions/export-test-session/export?format=python&workflow_name=custom_wf"
+        )
+        assert py_resp.status_code == 200
+        py_data = py_resp.json()
+        assert py_data["session_id"] == "export-test-session"
+        assert py_data["format"] == "python"
+        assert py_data["step_count"] == 3
+        assert "driver.click" in py_data["content"]
+        assert py_data["workflow"]["name"] == "custom_wf"
+
+        # 2. Export as YAML
+        yaml_resp = client.get("/api/v1/sessions/export-test-session/export?format=yaml")
+        assert yaml_resp.status_code == 200
+        yaml_data = yaml_resp.json()
+        assert yaml_data["format"] == "yaml"
+        assert yaml_data["step_count"] == 3
+        assert "steps:" in yaml_data["content"]
+
+        # 3. Export as Markdown
+        md_resp = client.get("/api/v1/sessions/export-test-session/export?format=markdown")
+        assert md_resp.status_code == 200
+        md_data = md_resp.json()
+        assert md_data["format"] == "markdown"
+        assert "# Workflow Report:" in md_data["content"]
+
+        # 4. Run workflow dry-run via session_id
+        run_sess_resp = client.post(
+            "/api/v1/workflows/run",
+            json={"session_id": "export-test-session", "dry_run": True},
+        )
+        assert run_sess_resp.status_code == 200
+        run_sess_data = run_sess_resp.json()
+        assert run_sess_data["status"] == "dry_run"
+        assert run_sess_data["steps"] == 3
+        assert len(run_sess_data["workflow"]["steps"]) == 3
+
+        # 5. Run workflow dry-run via workflow_yaml
+        run_yaml_resp = client.post(
+            "/api/v1/workflows/run",
+            json={"workflow_yaml": yaml_data["content"], "dry_run": True},
+        )
+        assert run_yaml_resp.status_code == 200
+        run_yaml_data = run_yaml_resp.json()
+        assert run_yaml_data["status"] == "dry_run"
+        assert run_yaml_data["steps"] == 3
+
+        # Cleanup
+        client.delete("/api/v1/sessions/export-test-session")
