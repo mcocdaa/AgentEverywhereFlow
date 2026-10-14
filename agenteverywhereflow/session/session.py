@@ -164,6 +164,7 @@ class ChatSession:
         self._approval_event = threading.Event()
         self._approval_decision: ApprovalDecision | None = None
         self._approval_lock = threading.Lock()
+        self._turn_lock = threading.Lock()
         self._abort_requested = threading.Event()
 
         # Event listeners for streaming / UI updates
@@ -434,7 +435,7 @@ class ChatSession:
         targets_list: list[TargetInfo] = []
         if getattr(meta, "targets", None):
             for t_dict in meta.targets:
-                r_dict = t_dict.get("rect", {})
+                r_dict = t_dict.get("target_rect") or t_dict.get("rect") or {}
                 rect = Rect(
                     x=r_dict.get("x", 0),
                     y=r_dict.get("y", 0),
@@ -558,6 +559,14 @@ class ChatSession:
         max_steps: int | None = None,
     ) -> TurnResult:
         """Execute a conversational dialogue turn against the target."""
+        with self._turn_lock:
+            return self._execute_turn_locked(user_instruction, max_steps=max_steps)
+
+    def _execute_turn_locked(
+        self,
+        user_instruction: str,
+        max_steps: int | None = None,
+    ) -> TurnResult:
         self._abort_requested.clear()
         effective_max_steps = max_steps if max_steps is not None else self.config.max_steps
         self.turn_count += 1
@@ -926,12 +935,17 @@ class ChatSession:
                         msg = payload_data.get("message", "Task finished.")
                         self.state = SessionState.WAITING_INPUT
                         self.freeze_completed_turn()
-                        self.save()
                         self.emit_event(
                             SessionEventType.TASK_COMPLETED,
                             step=turn_steps,
                             payload={"summary": msg},
                         )
+                        self.emit_event(
+                            SessionEventType.TURN_FINISHED,
+                            step=turn_steps,
+                            payload={"status": "completed", "conversational": False},
+                        )
+                        self.save()
                         return TurnResult(
                             success=True,
                             completed=True,
@@ -1053,7 +1067,6 @@ class ChatSession:
 
                     self.state = SessionState.WAITING_INPUT
                     self.freeze_completed_turn()
-                    self.save()
 
                     if is_conv:
                         # For conversational dialogue, emit MESSAGE so it appears in assistant speech bubble
@@ -1073,6 +1086,7 @@ class ChatSession:
                         step=turn_steps,
                         payload={"status": "completed", "conversational": is_conv},
                     )
+                    self.save()
                     return TurnResult(
                         success=True,
                         completed=True,
@@ -1086,7 +1100,6 @@ class ChatSession:
                     # Model answered a question, asked for clarification, or responded with dialogue
                     self.state = SessionState.WAITING_INPUT
                     self.freeze_completed_turn()
-                    self.save()
                     self.emit_event(
                         SessionEventType.TASK_COMPLETED,
                         step=turn_steps,
@@ -1097,6 +1110,7 @@ class ChatSession:
                         step=turn_steps,
                         payload={"status": "completed", "conversational": True},
                     )
+                    self.save()
                     return TurnResult(
                         success=True,
                         completed=True,
@@ -1126,12 +1140,12 @@ class ChatSession:
 
         self.state = SessionState.WAITING_INPUT
         self.freeze_completed_turn()
-        self.save()
         self.emit_event(
             SessionEventType.TURN_FINISHED,
             step=turn_steps,
             payload={"status": "step_limit_reached"},
         )
+        self.save()
         return TurnResult(
             success=True,
             completed=False,

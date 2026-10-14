@@ -356,9 +356,12 @@ def create_app() -> FastAPI:
 
     def _resolve_session(session_id: str) -> Any:
         """Retrieve an active session from memory or restore a persisted session from disk."""
-        return session_manager.get_session(session_id) or session_manager.restore_session(
-            session_id
-        )
+        session = session_manager.get_session(session_id)
+        if session is None:
+            session = session_manager.restore_session(session_id)
+            if session:
+                session.permission_gate.set_handler(session.wait_for_server_approval)
+        return session
 
     @app.get("/api/v1/sessions")
     def list_sessions() -> list[dict[str, Any]]:
@@ -369,6 +372,7 @@ def create_app() -> FastAPI:
             if meta.session_id not in active_ids:
                 restored = session_manager.restore_session(meta.session_id)
                 if restored:
+                    restored.permission_gate.set_handler(restored.wait_for_server_approval)
                     active.append(restored)
                     active_ids.add(restored.session_id)
 
@@ -648,10 +652,26 @@ def create_app() -> FastAPI:
                         session.target.title,
                         instruction,
                     )
+
+                    def run_ws_turn(inst: str = instruction, steps: int = max_steps) -> None:
+                        try:
+                            session.execute_turn(inst, max_steps=steps)
+                        except Exception as exc:
+                            logger.exception(
+                                "Unhandled exception during WS execute_turn in session %s: %s",
+                                session.session_id,
+                                exc,
+                            )
+                            session.state = SessionState.ERROR
+                            session.emit_event(
+                                SessionEventType.ERROR,
+                                step=session.turn_count,
+                                payload={"error": f"Internal execution error: {exc}"},
+                            )
+
                     # Run turn in background thread
                     threading.Thread(
-                        target=session.execute_turn,
-                        args=(instruction, max_steps),
+                        target=run_ws_turn,
                         daemon=True,
                     ).start()
                 elif action == "abort":

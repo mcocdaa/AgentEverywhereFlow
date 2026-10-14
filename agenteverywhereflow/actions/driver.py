@@ -47,8 +47,16 @@ class InputDriver:
     def _find_x11_child_at(self, disp: Any, win: Any, rx: int, ry: int) -> tuple[Any, int, int]:
         """Recursively locate the innermost child widget under window relative (rx, ry)."""
         try:
+            from Xlib import X
+
             tree = win.query_tree()
             for child in reversed(tree.children):
+                try:
+                    attrs = child.get_attributes()
+                    if attrs.map_state != X.IsViewable:
+                        continue
+                except Exception:
+                    continue
                 cg = child.get_geometry()
                 if cg.x <= rx < cg.x + cg.width and cg.y <= ry < cg.y + cg.height:
                     return self._find_x11_child_at(disp, child, rx - cg.x, ry - cg.y)
@@ -235,6 +243,8 @@ class InputDriver:
         x: int | None = None,
         y: int | None = None,
         window_handle: int = 0,
+        window_rel_x: int = 0,
+        window_rel_y: int = 0,
         restore_cursor: bool = True,
     ) -> None:
         """Perform a double click."""
@@ -244,6 +254,8 @@ class InputDriver:
             button="left",
             clicks=2,
             window_handle=window_handle,
+            window_rel_x=window_rel_x,
+            window_rel_y=window_rel_y,
             restore_cursor=restore_cursor,
         )
 
@@ -252,6 +264,8 @@ class InputDriver:
         x: int | None = None,
         y: int | None = None,
         window_handle: int = 0,
+        window_rel_x: int = 0,
+        window_rel_y: int = 0,
         restore_cursor: bool = True,
     ) -> None:
         """Perform a right click."""
@@ -261,6 +275,8 @@ class InputDriver:
             button="right",
             clicks=1,
             window_handle=window_handle,
+            window_rel_x=window_rel_x,
+            window_rel_y=window_rel_y,
             restore_cursor=restore_cursor,
         )
 
@@ -377,13 +393,23 @@ class InputDriver:
                 parent_win = x_disp.create_resource_object("window", window_handle)
                 target_win = self._get_x11_active_input_window(x_disp, parent_win)
 
+                key_events: list[tuple[int, int]] = []
+                can_send_x11 = True
                 for char in text:
                     sym_name = "space" if char == " " else char
                     keysym = XK.string_to_keysym(sym_name)
-                    if keysym:
-                        keycode = x_disp.keysym_to_keycode(keysym)
-                        state = X.ShiftMask if char.isupper() else 0
+                    if not keysym:
+                        can_send_x11 = False
+                        break
+                    keycode = x_disp.keysym_to_keycode(keysym)
+                    if not keycode:
+                        can_send_x11 = False
+                        break
+                    state = X.ShiftMask if char.isupper() else 0
+                    key_events.append((keycode, state))
 
+                if can_send_x11:
+                    for keycode, state in key_events:
                         evt_down = event.KeyPress(
                             time=X.CurrentTime,
                             root=x_disp.screen().root,
@@ -413,18 +439,16 @@ class InputDriver:
                             detail=keycode,
                         )
                         target_win.send_event(evt_up, event_mask=X.KeyReleaseMask)
-                x_disp.flush()
-                return
+                    x_disp.flush()
+                    return
             except Exception:
                 pass
 
-        backend = self._get_backend()
-        if not backend:
-            return
-
         has_unicode = any(ord(c) > 127 for c in text)
+        backend = self._get_backend()
+
         # Use clipboard paste for unicode/Chinese or Windows to bypass IME interference
-        if sys.platform == "win32":
+        if sys.platform == "win32" and backend:
             try:
                 import pyperclip
                 import win32api
@@ -433,22 +457,34 @@ class InputDriver:
 
                 from agenteverywhereflow.config import config
 
-                pyperclip.copy(text)
-                time.sleep(0.03)
-                if config.debug:
-                    Console(file=sys.__stdout__).print(
-                        f"[dim magenta]    [DEBUG-WIN32] Clipboard text set ({len(text)} chars) -> win32 keybd_event(Ctrl+V)[/dim magenta]"
-                    )
-                # Native Windows keybd_event for Ctrl+V
-                win32api.keybd_event(win32con.VK_CONTROL, 0, 0, 0)
-                time.sleep(0.015)
-                win32api.keybd_event(ord("V"), 0, 0, 0)
-                time.sleep(0.02)
-                win32api.keybd_event(ord("V"), 0, win32con.KEYEVENTF_KEYUP, 0)
-                time.sleep(0.015)
-                win32api.keybd_event(win32con.VK_CONTROL, 0, win32con.KEYEVENTF_KEYUP, 0)
-                time.sleep(0.04)
-                return
+                prev_clip: str | None = None
+                try:
+                    prev_clip = pyperclip.paste()
+                except Exception:
+                    prev_clip = None
+                try:
+                    pyperclip.copy(text)
+                    time.sleep(0.03)
+                    if config.debug:
+                        Console(file=sys.__stdout__).print(
+                            f"[dim magenta]    [DEBUG-WIN32] Clipboard text set ({len(text)} chars) -> win32 keybd_event(Ctrl+V)[/dim magenta]"
+                        )
+                    # Native Windows keybd_event for Ctrl+V
+                    win32api.keybd_event(win32con.VK_CONTROL, 0, 0, 0)
+                    time.sleep(0.015)
+                    win32api.keybd_event(ord("V"), 0, 0, 0)
+                    time.sleep(0.02)
+                    win32api.keybd_event(ord("V"), 0, win32con.KEYEVENTF_KEYUP, 0)
+                    time.sleep(0.015)
+                    win32api.keybd_event(win32con.VK_CONTROL, 0, win32con.KEYEVENTF_KEYUP, 0)
+                    time.sleep(0.04)
+                    return
+                finally:
+                    if prev_clip is not None:
+                        try:
+                            pyperclip.copy(prev_clip)
+                        except Exception:
+                            pass
             except Exception as e:
                 from rich.console import Console
 
@@ -463,13 +499,31 @@ class InputDriver:
             try:
                 import pyperclip
 
-                pyperclip.copy(text)
-                time.sleep(0.04)
-                backend.hotkey("ctrl", "v")
-                time.sleep(0.04)
-                return
+                prev_clip = None
+                try:
+                    prev_clip = pyperclip.paste()
+                except Exception:
+                    prev_clip = None
+                try:
+                    pyperclip.copy(text)
+                    time.sleep(0.04)
+                    if backend:
+                        backend.hotkey("ctrl", "v")
+                    elif x_disp and window_handle > 0:
+                        self.hotkey("ctrl", "v", window_handle=window_handle)
+                    time.sleep(0.04)
+                    return
+                finally:
+                    if prev_clip is not None:
+                        try:
+                            pyperclip.copy(prev_clip)
+                        except Exception:
+                            pass
             except Exception:
                 pass
+
+        if not backend:
+            return
 
         try:
             backend.write(text, interval=interval)

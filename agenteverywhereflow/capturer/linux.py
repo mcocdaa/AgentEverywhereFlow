@@ -2,6 +2,7 @@
 
 import shutil
 import subprocess
+from typing import Any
 
 import mss
 from PIL import Image
@@ -11,6 +12,25 @@ from agenteverywhereflow.capturer.base import BaseCapturer, Rect, TargetInfo, Ta
 
 class LinuxCapturer(BaseCapturer):
     """Linux desktop capturer (X11 / Xlib / wmctrl / mss)."""
+
+    def __init__(self) -> None:
+        self._display: Any = None
+
+    def _get_display(self) -> Any:
+        if self._display is None:
+            from Xlib import display
+
+            self._display = display.Display()
+        return self._display
+
+    def close(self) -> None:
+        """Close cached X11 display connection if open."""
+        if self._display is not None:
+            try:
+                self._display.close()
+            except Exception:
+                pass
+            self._display = None
 
     def list_targets(
         self, include_displays: bool = True, include_windows: bool = True
@@ -91,9 +111,9 @@ class LinuxCapturer(BaseCapturer):
         # 1. If target is a specific window with native X11 handle, capture directly
         if target.target_type == TargetType.WINDOW and target.native_handle > 0:
             try:
-                from Xlib import X, display
+                from Xlib import X
 
-                d = display.Display()
+                d = self._get_display()
                 win = d.create_resource_object("window", target.native_handle)
                 geom = win.get_geometry()
                 raw = win.get_image(0, 0, geom.width, geom.height, X.ZPixmap, 0xFFFFFFFF)
@@ -102,7 +122,7 @@ class LinuxCapturer(BaseCapturer):
                         "RGB", (geom.width, geom.height), raw.data, "raw", "BGRX"
                     )
             except Exception:
-                pass
+                self.close()
 
         # 2. Display or fallback to mss
         try:

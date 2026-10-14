@@ -395,7 +395,7 @@ class WorkflowExporter:
             "",
             "def main():",
             "    capturer = get_capturer()",
-            '    print("🚀 Replaying Workflow: ' + workflow.name + '")',
+            f"    print('🚀 Replaying Workflow: ' + {repr(workflow.name)})",
             "",
             "    # Target resolution cache",
             "    resolved_targets: dict[str, TargetInfo] = {}",
@@ -415,7 +415,7 @@ class WorkflowExporter:
             tgt_name = s.target or (workflow.targets[0].title if workflow.targets else "")
 
             if s.action == "switch_target":
-                lines.append(f'    active_target = find_target(capturer, "{tgt_name}")')
+                lines.append(f"    active_target = find_target(capturer, {repr(tgt_name)})")
                 lines.append("    capturer.focus(active_target)")
                 lines.append(
                     f'    print("  [Step {s.step_number}] Focused target: " + active_target.title)'
@@ -425,9 +425,9 @@ class WorkflowExporter:
             elif s.action in ("click", "double_click", "right_click"):
                 if tgt_name:
                     lines.append(
-                        f'    if not active_target or "{tgt_name.lower()}" not in active_target.title.lower():'
+                        f"    if not active_target or {repr(tgt_name.lower())} not in active_target.title.lower():"
                     )
-                    lines.append(f'        active_target = find_target(capturer, "{tgt_name}")')
+                    lines.append(f"        active_target = find_target(capturer, {repr(tgt_name)})")
                     lines.append("        capturer.focus(active_target)")
                 x = s.params.get("x", 0)
                 y = s.params.get("y", 0)
@@ -446,7 +446,7 @@ class WorkflowExporter:
                 lines.append("        img_height=active_target.rect.height,")
                 lines.append("    )")
                 lines.append(
-                    f'    driver.click(sx, sy, button="{button}", clicks={clicks}, window_handle=active_target.native_handle)'
+                    f"    driver.click(sx, sy, button={repr(button)}, clicks={clicks}, window_handle=active_target.native_handle, window_rel_x=int({x}), window_rel_y=int({y}))"
                 )
                 lines.append(
                     f'    print("  [Step {s.step_number}] Clicked at ({x}, {y}) -> Screen (" + str(sx) + ", " + str(sy) + ")")'
@@ -457,9 +457,9 @@ class WorkflowExporter:
                 text = s.params.get("text", "")
                 if tgt_name:
                     lines.append(
-                        f'    if not active_target or "{tgt_name.lower()}" not in active_target.title.lower():'
+                        f"    if not active_target or {repr(tgt_name.lower())} not in active_target.title.lower():"
                     )
-                    lines.append(f'        active_target = find_target(capturer, "{tgt_name}")')
+                    lines.append(f"        active_target = find_target(capturer, {repr(tgt_name)})")
                     lines.append("        capturer.focus(active_target)")
                 lines.append(
                     f"    driver.type_text({repr(text)}, window_handle=active_target.native_handle)"
@@ -471,9 +471,9 @@ class WorkflowExporter:
                 key = s.params.get("key", "")
                 if tgt_name:
                     lines.append(
-                        f'    if not active_target or "{tgt_name.lower()}" not in active_target.title.lower():'
+                        f"    if not active_target or {repr(tgt_name.lower())} not in active_target.title.lower():"
                     )
-                    lines.append(f'        active_target = find_target(capturer, "{tgt_name}")')
+                    lines.append(f"        active_target = find_target(capturer, {repr(tgt_name)})")
                     lines.append("        capturer.focus(active_target)")
                 lines.append(
                     f"    driver.press_key({repr(key)}, window_handle=active_target.native_handle)"
@@ -485,9 +485,9 @@ class WorkflowExporter:
                 keys = s.params.get("keys", [])
                 if tgt_name:
                     lines.append(
-                        f'    if not active_target or "{tgt_name.lower()}" not in active_target.title.lower():'
+                        f"    if not active_target or {repr(tgt_name.lower())} not in active_target.title.lower():"
                     )
-                    lines.append(f'        active_target = find_target(capturer, "{tgt_name}")')
+                    lines.append(f"        active_target = find_target(capturer, {repr(tgt_name)})")
                     lines.append("        capturer.focus(active_target)")
                 keys_arg = ", ".join(repr(k) for k in keys)
                 lines.append(

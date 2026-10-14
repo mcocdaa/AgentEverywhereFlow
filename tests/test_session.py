@@ -448,7 +448,7 @@ def test_chat_session_meta_question_unwrapping() -> None:
 
 
 def test_chat_session_events_persistence_and_restore() -> None:
-    """Verify that all emitted events are recorded on session and restored from disk storage."""
+    """Verify that all emitted events are automatically persisted by execute_turn and restored from disk storage."""
     target = _make_dummy_target("Persistence Target")
 
     def simple_planner(messages: list[dict[str, Any]], tgt: TargetInfo, step: int) -> str:
@@ -474,11 +474,33 @@ def test_chat_session_events_persistence_and_restore() -> None:
     assert SessionEventType.TASK_COMPLETED in event_types
     assert SessionEventType.TURN_FINISHED in event_types
 
-    # Save to disk
-    session.save()
-
-    # Restore from disk
+    # Restore directly from disk WITHOUT calling external session.save()
     restored = ChatSession.restore("test-events-persist-99")
     assert restored is not None
     assert len(restored.events) == len(session.events)
-    assert restored.events[-1].event_type == session.events[-1].event_type
+    restored_types = {e.event_type for e in restored.events}
+    assert SessionEventType.TASK_COMPLETED in restored_types
+    assert SessionEventType.TURN_FINISHED in restored_types
+    assert restored.events[-1].event_type == SessionEventType.TURN_FINISHED
+
+
+def test_restore_session_preserves_target_rect() -> None:
+    """Verify restore_session preserves non-default target Rect dimensions."""
+    mgr = SessionManager()
+    custom_target = TargetInfo(
+        target_id="hwnd:0x7777",
+        target_type=TargetType.WINDOW,
+        title="Custom Rect Window",
+        rect=Rect(x=240, y=180, width=1920, height=1080),
+        native_handle=0x7777,
+    )
+    s = mgr.create_session(custom_target, session_id="test-rect-restore-01")
+    s.save()
+    mgr.clear()
+
+    restored = mgr.restore_session("test-rect-restore-01")
+    assert restored is not None
+    assert restored.target.rect.x == 240
+    assert restored.target.rect.y == 180
+    assert restored.target.rect.width == 1920
+    assert restored.target.rect.height == 1080

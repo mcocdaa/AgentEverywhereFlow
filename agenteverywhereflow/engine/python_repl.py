@@ -125,7 +125,13 @@ class PythonReplEngine(BaseExecutionEngine):
                 f"[dim]──▶ Screen: ({sx}, {sy}) [window='{tgt.title}'][/dim]",
                 f"⚡ [Tool Call] double_click(x={int(x)}, y={int(y)}) ──▶ Screen: ({sx}, {sy}) [window='{tgt.title}']",
             )
-            driver.double_click(x=sx, y=sy, window_handle=tgt.native_handle)
+            driver.double_click(
+                x=sx,
+                y=sy,
+                window_handle=tgt.native_handle,
+                window_rel_x=int(x),
+                window_rel_y=int(y),
+            )
 
         def drag(
             from_x: float,
@@ -155,7 +161,13 @@ class PythonReplEngine(BaseExecutionEngine):
                 f"[dim]──▶ Screen: ({sx}, {sy}) [window='{tgt.title}'][/dim]",
                 f"⚡ [Tool Call] right_click(x={int(x)}, y={int(y)}) ──▶ Screen: ({sx}, {sy}) [window='{tgt.title}']",
             )
-            driver.right_click(x=sx, y=sy, window_handle=tgt.native_handle)
+            driver.right_click(
+                x=sx,
+                y=sy,
+                window_handle=tgt.native_handle,
+                window_rel_x=int(x),
+                window_rel_y=int(y),
+            )
 
         def type_text(text: str, target: str | TargetInfo | None = None) -> None:
             tgt = switch_to(target) if target else active_target_box[0]

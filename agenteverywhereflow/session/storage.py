@@ -2,6 +2,7 @@
 
 import json
 import logging
+import os
 import shutil
 import time
 from pathlib import Path
@@ -68,7 +69,19 @@ class SessionStorage:
         self.base_dir.mkdir(parents=True, exist_ok=True)
 
     def _get_session_dir(self, session_id: str) -> Path:
+        if not session_id or ".." in session_id or "/" in session_id or "\\" in session_id:
+            raise ValueError(f"Invalid session_id: {session_id!r}")
+        resolved = (self.base_dir / session_id).resolve()
+        if not resolved.is_relative_to(self.base_dir.resolve()):
+            raise ValueError(f"Invalid session_id path traversal: {session_id!r}")
         return self.base_dir / session_id
+
+    @staticmethod
+    def _atomic_write_text(target_path: Path, text: str) -> None:
+        tmp_path = target_path.with_suffix(target_path.suffix + ".tmp")
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            f.write(text)
+        os.replace(tmp_path, target_path)
 
     def save_session(
         self,
@@ -142,8 +155,7 @@ class SessionStorage:
         )
 
         meta_file = s_dir / "meta.json"
-        with open(meta_file, "w", encoding="utf-8") as f:
-            f.write(meta.model_dump_json(indent=2))
+        self._atomic_write_text(meta_file, meta.model_dump_json(indent=2))
 
         # Save conversation messages trajectory (omitting massive base64 payloads to save disk)
         sanitized_messages: list[dict[str, Any]] = []
@@ -163,18 +175,19 @@ class SessionStorage:
                 sanitized_messages.append(msg)
 
         msg_file = s_dir / "messages.json"
-        with open(msg_file, "w", encoding="utf-8") as f:
-            json.dump(sanitized_messages, f, indent=2, ensure_ascii=False)
+        self._atomic_write_text(
+            msg_file, json.dumps(sanitized_messages, indent=2, ensure_ascii=False)
+        )
 
         if recorded_steps is not None:
             rec_file = s_dir / "recorded_steps.json"
-            with open(rec_file, "w", encoding="utf-8") as f:
-                json.dump(recorded_steps, f, indent=2, ensure_ascii=False)
+            self._atomic_write_text(
+                rec_file, json.dumps(recorded_steps, indent=2, ensure_ascii=False)
+            )
 
         if events is not None:
             ev_file = s_dir / "events.json"
-            with open(ev_file, "w", encoding="utf-8") as f:
-                json.dump(events, f, indent=2, ensure_ascii=False)
+            self._atomic_write_text(ev_file, json.dumps(events, indent=2, ensure_ascii=False))
 
         return s_dir
 

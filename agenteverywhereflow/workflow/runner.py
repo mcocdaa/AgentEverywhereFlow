@@ -154,6 +154,8 @@ class WorkflowRunner:
                         button=button,  # type: ignore
                         clicks=clicks,
                         window_handle=active_target.native_handle,
+                        window_rel_x=int(x),
+                        window_rel_y=int(y),
                     )
                     time.sleep(0.3 * delay_scale)
 

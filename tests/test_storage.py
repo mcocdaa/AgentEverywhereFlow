@@ -134,3 +134,13 @@ def test_chat_session_auto_persistence() -> None:
 
         finally:
             session_storage.base_dir = orig_dir
+
+
+def test_session_storage_rejects_path_traversal(tmp_path: Path) -> None:
+    """Verify SessionStorage rejects '../' or slash path traversal in session_id."""
+    import pytest
+
+    storage = SessionStorage(base_dir=tmp_path)
+    for bad_id in ("../escape", "..\\escape", "a/b", "a\\b", ""):
+        with pytest.raises(ValueError, match="Invalid session_id"):
+            storage.load_metadata(bad_id)
