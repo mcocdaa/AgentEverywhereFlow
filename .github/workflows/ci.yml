@@ -46,6 +46,11 @@ jobs:
       - name: Run mypy type check
         run: uv run mypy agenteverywhereflow
 
+      - name: Verify package build & bundled WebUI dist
+        run: |
+          uv build
+          python3 -c "import glob, zipfile; whls = glob.glob('dist/*.whl'); assert whls, 'No wheel built'; z = zipfile.ZipFile(whls[0]); assert any('webui_dist/index.html' in n for n in z.namelist()), 'webui_dist/index.html missing from wheel'"
+
   test-linux:
     name: Test Linux (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
