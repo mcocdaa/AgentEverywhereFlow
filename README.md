@@ -1,331 +1,144 @@
 <div align="center">
 
-# 🌐 AgentEverywhereFlow (`AEFlow`)
+# AgentEverywhereFlow
 
-**Agent on Everywhere**: Instant screen & window casting for embodied desktop agents.  
-任何页面与窗口皆可一键投屏召唤的具身智能体基础设施。
+Screen-cast style viewport isolation & CodeAct execution engine for embodied desktop agents.
 
-[![Family: *Flow](https://img.shields.io/badge/family-*Flow-8A2BE2.svg)](https://github.com/mcocdaa)
-[![CI Status](https://github.com/mcocdaa/AgentEverywhereFlow/actions/workflows/ci.yml/badge.svg)](https://github.com/mcocdaa/AgentEverywhereFlow/actions)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Python: 3.11+](https://img.shields.io/badge/Python-3.11%2B-brightgreen.svg)](pyproject.toml)
-[![Code Style: Ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+[![Family: *Flow](https://img.shields.io/badge/Family-*Flow-8A2BE2?style=flat-square)](https://github.com/mcocdaa)
+[![CI Status](https://img.shields.io/github/actions/workflow/status/mcocdaa/AgentEverywhereFlow/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/mcocdaa/AgentEverywhereFlow/actions)
+[![Release](https://img.shields.io/github/v/release/mcocdaa/AgentEverywhereFlow?style=flat-square)](https://github.com/mcocdaa/AgentEverywhereFlow/releases)
+[![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB?style=flat-square&logo=python&logoColor=white)](pyproject.toml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue?style=flat-square)](LICENSE)
 
-[English](README.md) | [简体中文](README_CN.md)
-
-</div>
-
----
-
-<div align="center">
-
-### 🎬 Real-World Autonomous Demos
-
-#### 🐱 Scenario 1: 9-Grid Visual CAPTCHA Solving & Spatial Grounding
-<img src="docs/assets/demo_captcha.gif" alt="AEFlow 9-Grid Captcha Demo" width="820">
-
-*Zero-shot multimodal spatial grounding: Agent targets browser window, identifies all 3 cat tiles in a 9-grid challenge, clicks each with visual checks, and passes verification.*
-
-```bash
-# Reproduce in Chrome or Edge (try it yourself with examples/captcha_demo.html):
-aef run --target "Chrome" --task "在当前九宫格人机验证中，找出所有包含猫咪的方格依次点击选中，然后点击右下角的验证按钮"
-```
+[English](README.md) · [简体中文](README_CN.md)
 
 <br/>
 
-#### 📊 Scenario 2: Office Spreadsheet Automation & Formula Calculation
-<img src="docs/assets/demo_excel.gif" alt="AEFlow Excel Summation Demo" width="820">
+<img src="docs/assets/demo_captcha.gif" alt="AEFlow 9-Grid Captcha Demo" width="780">
+<br/>
+<sub>Zero-shot multimodal spatial grounding: viewport-isolated browser targeting & 9-grid visual CAPTCHA solving.</sub>
 
-*Desktop productivity: Agent targets Microsoft Excel window, locates target Total cell, injects <code>=SUM(D2:D6)</code> formula, and calculates total sales.*
+<br/><br/>
 
-```bash
-# Reproduce in Excel or WPS (try it yourself with examples/sales_demo.xlsx):
-aef run --target "Excel" --task "在销售额列下方的总计空白单元格点击，输入求和公式计算总金额并按回车"
-```
+<img src="docs/assets/demo_excel.gif" alt="AEFlow Excel Summation Demo" width="780">
+<br/>
+<sub>Desktop productivity automation: isolated Excel window casting, cell localization, and <code>=SUM(D2:D6)</code> formula execution.</sub>
 
 </div>
 
-## 💡 Why AgentEverywhereFlow?
+---
 
-Existing computer-use and GUI automation agents suffer from three major roadblocks:
-1. **Unfocused Global Viewports**: Grabbing the entire desktop leads to visual noise, popup interference, and negative/distorted coordinates across multiple monitors.
-2. **Lack of Instant Targeting**: There is no lightweight experience akin to Zoom / Tencent Meeting screen-sharing—allowing users to freely cast either an **entire monitor** or a **specific application window** (VS Code, Chrome, Terminal, etc.) to the agent.
-3. **Execution Rigidity vs. Safety**: Either agents are constrained to sluggish step-by-step clicks or given unconstrained bash access that risks destructive missteps.
+## ✨ Highlights
 
-**AgentEverywhereFlow (AEFlow)** solves this by introducing **Screen-Cast Style Viewport Isolation** for autonomous GUI agents:
-- 🎯 **Screen-Cast Target Picker**: Discover and bind agents to any physical display or active application window with zero-copy capture and precise viewport coordinate projection.
-- ⚡ **Instant Summon (`aef summon`)**: Cast and summon an agent in seconds via an interactive terminal UI or global shortcut.
-- 📐 **Explicit Resolution Contract**: Native pixel-space calibration `(0, 0) -> (width, height)` paired with optional coordinate grids and Set-of-Mark (SoM) indicators.
-- 🛡️ **Dual-Mode Execution Architecture**:
-  - **Minimal Mode (CodeAct REPL)**: High-speed, pythonic chaining of actions (`click`, `type_text`, `press`, `wait`, `hotkey`) with multi-block sequence merging.
-  - **Guarded Mode (JSON Schema)**: Strict atomic action schemas with safety policy filters and human-in-the-loop confirmation gates.
-- 🎯 **Recursive Sub-Widget Hit Testing**: Deep X11 and Win32 tree inspection ensuring clicks reliably trigger nested buttons, inputs, and controls without event dropping.
+- **Screen-Cast Target Picker**: Bind agents to any physical monitor (`display:1`) or individual application window (`window:0x...`) just like sharing a screen in Zoom—eliminating background noise and multi-monitor coordinate distortion.
+- **Explicit `(0,0) -> (W,H)` Coordinate Contract**: Every captured viewport is normalized to its local pixel space `(0, 0) -> (width, height)` with optional coordinate rulers, Set-of-Mark (SoM) overlays, and Per-Monitor DPI-v2 / X11 child hit-testing.
+- **Dual-Mode Execution Engine**:
+  - **Minimal Mode (CodeAct REPL)**: High-throughput Python action chaining (`click`, `type_text`, `press`, `hotkey`, `wait`, `switch_to`) in a restricted sandbox.
+  - **Guarded Mode (JSON Schema)**: Deterministic atomic action validation with policy interceptors and human-in-the-loop (`manual`) approval gates.
+- **Canonical HTTP/WebSocket API (`aef serve`) + Standalone WebUI**: Headless FastAPI daemon streaming real-time reasoning, action proposals, and isolated viewport frames to **[AgentEverywhereFlow-WebUI](https://github.com/mcocdaa/AgentEverywhereFlow-WebUI)**.
+- **One-Click Session-to-Python/YAML Workflow Export**: Record successful agent trajectories and export them to zero-LLM Python scripts or declarative YAML workflows for deterministic replay (`aef workflow play`).
+- **Multi-Target & Zero-Disturbance Headless Isolation**: Coordinate tasks across multiple bound windows (`aef chat -t "Chrome,Excel"`) or run completely silently via Windows Virtual Display Driver (VDD) and Docker + Xvfb containers.
 
 ---
 
-## 🏗️ Architecture Blueprint
+## 🚀 Quick Start
 
-```mermaid
-flowchart TD
-    subgraph UI["1. Target Discovery & Summoning"]
-        CLI["CLI: aef summon / aef run"] --> Selector["Screen-Cast Selector (Displays & Windows)"]
-        Selector --> Target["TargetInfo (HWND / XID / Rect)"]
-    end
-
-    subgraph Perception["2. Viewport Capture & Geometry"]
-        Target --> CapturerRouter{"OS Dispatch"}
-        CapturerRouter -->|Windows| WinCap["Win32 DWM / PrintWindow (PW_RENDERFULLCONTENT)<br/>+ Per-Monitor DPI-v2 Awareness"]
-        CapturerRouter -->|Linux| LinCap["X11 Drawable Capture (XGetImage)<br/>+ mss multi-monitor fallback"]
-        CapturerRouter -->|macOS| MacCap["ScreenCaptureKit (Planned)"]
-        WinCap --> ViewportImg["Target-Relative Viewport Image"]
-        LinCap --> ViewportImg
-        MacCap --> ViewportImg
-    end
-
-    subgraph Calibration["3. Spatial Calibration & Vision"]
-        ViewportImg --> Calib["Resolution Contract: (0,0) -> (W,H)"]
-        Calib --> Grid["Optional Grid Ruler & SoM Markings"]
-        Grid --> VLM["Vision-Language Model (GPT-4o, Claude 3.5, Qwen2-VL)"]
-    end
-
-    subgraph Execution["4. Dual-Mode Execution & Event Injection"]
-        VLM --> Router{"Execution Mode"}
-        Router -->|Minimal / CodeAct| REPL["Python REPL Sandbox (click, type, press, wait)"]
-        Router -->|Guarded| GuardedEngine["JSON Schema Guarded Engine (Safety Intercepts)"]
-        REPL --> Projector["CoordinateProjector (Local -> Screen / Window)"]
-        GuardedEngine --> Projector
-        Projector --> Driver["InputDriver (Win32 SendInput / X11 XSendEvent)"]
-        Driver --> HitTest["Recursive Child Hit-Testing (_find_x11_child_at)"]
-    end
-```
-
----
-
-## ⚖️ Dual-Mode Execution Comparison
-
-| Feature | ⚡ Minimal Mode (CodeAct REPL) | 🛡️ Guarded Mode (Structured JSON) |
-| :--- | :--- | :--- |
-| **Protocol** | Python code block (```python ... ```) | JSON Schema (```json ... ```) |
-| **API** | `click(x, y)`, `type_text()`, `press()`, `wait()` | `{"action": "click", "x": 100, "y": 200}` |
-| **Throughput** | High (multi-action chaining in single LLM turn) | Deterministic (strict atomic step verification) |
-| **Safety Net** | Restricted sandbox built-ins | Policy interceptors & Human confirmation prompts |
-| **Best For** | Prototyping, web browsing, form filling | Financial operations, sensitive infrastructure, production |
-
----
-
-## ⚡ Quick Start
-
-### Installation
-
-AEFlow is built using modern Python packaging with [`uv`](https://github.com/astral-sh/uv):
+### 1. Install & Configure
 
 ```bash
-# Clone the repository
-git clone https://github.com/mcocdaa/AgentEverywhereFlow.git
-cd AgentEverywhereFlow
+# Install globally as a CLI tool via uv
+uv tool install "git+https://github.com/mcocdaa/AgentEverywhereFlow.git"
 
-# Install dependencies based on your operating system
-# On Linux:
-uv pip install -e ".[linux]"
+# Or clone for local development (Linux / Windows)
+git clone https://github.com/mcocdaa/AgentEverywhereFlow.git && cd AgentEverywhereFlow
+uv sync --all-extras
 
-# On Windows:
-uv pip install -e ".[windows]"
-
-# Developer / Contributor setup:
-uv pip install -e ".[dev,linux]"
-```
-
-### Configuration
-
-AEFlow supports multiple flexible configuration methods with automatic cascading fallbacks (default model: `deepseek-flash` | default base URL: `https://api.deepseek.com`):
-
-#### Method 1: Instant CLI Configuration (Recommended)
-Persist credentials globally to `~/.aef/.env` without editing files:
-```bash
-# 1. Set your API Key (default is already configured for DeepSeek):
+# Configure your VLM API key (persists to ~/.aef/.env; defaults to DeepSeek / OpenAI-compatible)
 aef config --set-key "sk-your-api-key"
-
-# 2. (Optional) Switch to OpenAI, Claude, or custom providers if desired:
-aef config --set-model "gpt-4o"
-aef config --set-base "https://api.openai.com/v1"
+aef config --set-model "gpt-4o" --set-base "https://api.openai.com/v1"
 ```
 
-#### Method 2: Standard Environment Variables
-AEFlow automatically falls back to standard environment variables:
-```bash
-export OPENAI_API_KEY="sk-your-api-key"
-
-# Optional overrides (defaults to https://api.deepseek.com and deepseek-flash):
-export OPENAI_BASE_URL="https://api.deepseek.com"
-export OPENAI_MODEL_NAME="deepseek-flash"
-```
-
-#### Method 3: Local `.env` File
-You can also place a `.env` in the current working directory:
-```ini
-AEF_MODEL_NAME=deepseek-flash
-AEF_BASE_URL=https://api.deepseek.com
-AEF_API_KEY=your_api_key_here
-AEF_DEFAULT_MODE=minimal
-```
-
----
-
-### 🖥️ Companion Web Console: AgentEverywhereFlow-WebUI
-
-For users and teams seeking an interactive visual cockpit, check out the official companion dashboard:
-👉 **[AgentEverywhereFlow-WebUI](https://github.com/mcocdaa/AgentEverywhereFlow-WebUI)** (Universal SPA built with React 19, Tailwind CSS v4, and Vite).
-
-- 📺 **Viewport-Isolated Live Monitor** with real-time cursor coordinate projection HUD and action ripple markers.
-- 💬 **Multi-Turn Interaction Stream** with collapsible Chain-of-Thought (CoT) and high-visibility CodeAct blocks.
-- 🛡️ **Human-in-the-Loop Security Gate** with one-click approval / rejection of OS input injections.
-- 📦 **One-Click Workflow Export** to standalone, zero-LLM Python replay scripts.
+### 2. Summon & Run
 
 ```bash
-# 1. Start headless backend daemon
-aef serve --host 127.0.0.1 --port 8000
-
-# 2. In AgentEverywhereFlow-WebUI:
-pnpm dev   # Opens studio console at http://localhost:5173
-```
-
----
-
-## 🕹️ CLI Usage
-
-```bash
-# 1. Interactive screen-cast target picker and agent summoner
+# Interactive screen-cast target picker & agent summoner
 aef summon
 
-# 2. List all available physical displays and active application windows with Target IDs
-aef list-targets
+# Run an autonomous task directly against a window title substring
+aef run --target "Chrome" --task "Select all cat tiles in the 9-grid CAPTCHA and click Verify"
 
-# 3. Summon agent by Window Title substring
-aef run --target "Chrome" --task "Search for GitHub Trending repositories"
-
-# 4. Multi-target cross-window continuous conversation
+# Multi-window interactive session with human-in-the-loop confirmation gate
 aef chat --target "Chrome,Excel" --permission manual
 
-# 5. Launch interactive WebUI Studio in browser (zero setup, auto-opens browser)
-aef ui
-
-# 6. Launch REST & WebSocket Dialogue Service Daemon (Swagger: http://localhost:8000/docs)
-aef serve --host 127.0.0.1 --port 8000
-
-# 6. Replay recorded workflow with zero LLM API calls (deterministic playback)
+# Replay an exported workflow with zero LLM token usage
 aef workflow play ~/.aef/workflows/sales_pipeline.yaml --speed 1.5
-
-# 7. Resume previous saved session
-aef chat --resume latest
-
-# 8. Check for updates and self-upgrade
-aef update
-
-# 9. View current configuration
-aef config
-
-# 10. Check system info & installed version
-aef version
 ```
 
----
+### 3. Launch WebUI Studio & Daemon (`aef serve`)
 
-## 💻 Programmatic Usage
+```bash
+# Start the canonical HTTP + WebSocket service daemon (OpenAPI docs at http://127.0.0.1:8000/docs)
+aef serve --host 127.0.0.1 --port 8000
 
-You can embed AEFlow directly into your Python workflows:
+# Or launch the interactive browser WebUI directly
+aef ui
+```
+
+### 4. Python SDK
 
 ```python
-from agenteverywhereflow.capturer import get_capturer
 from agenteverywhereflow.agent.loop import AgentLoop
+from agenteverywhereflow.capturer import get_capturer
 from agenteverywhereflow.config import AppConfig, ExecutionMode
 
-# 1. Discover target windows
-capturer = get_capturer()
-targets = capturer.list_targets()
-target = targets[0]  # E.g. VS Code, Terminal, or Display 1
-
-# 2. Initialize Agent Loop
+target = get_capturer().list_targets()[0]
 loop = AgentLoop(app_config=AppConfig(default_mode=ExecutionMode.MINIMAL_PYTHON))
-
-# 3. Run autonomous task
 loop.run(target=target, user_task="Fill the form and click submit")
 ```
 
-See [examples/](examples/) for more scripts, including custom model planner callbacks and interactive captcha demos.
-
 ---
 
-## 🧪 Comprehensive Benchmarks
+## 🤖 AI & Headless API
 
-AEFlow includes a high-fidelity end-to-end benchmark suite testing real GUI windows and multi-step agent actions:
+When `aef serve --port 8000` is running, external orchestrators, CI pipelines, and AI agents can drive desktop sessions, export trajectories, and trigger zero-LLM replays over REST and WebSocket (`/api/v1/sessions/{id}/ws`):
 
 ```bash
-# Run comprehensive multi-scenario suite (Form, Calculator, Guarded Mode)
-uv run python -m benchmarks.bench_suite
+# 1. Create a viewport-isolated session bound to a target window or display
+curl -X POST http://127.0.0.1:8000/api/v1/sessions \
+  -H "Content-Type: application/json" \
+  -d '{"target_id": "window:0x3400012", "mode": "minimal_python", "permission_mode": "auto"}'
 
-# Run autonomous goal convergence benchmark
-uv run python -m benchmarks.bench_autonomous
+# 2. Export the recorded session trajectory as a deterministic YAML workflow (or format=python)
+curl "http://127.0.0.1:8000/api/v1/sessions/session-abcd-1234/export?format=yaml"
 
-# Run standard unit tests
-uv run pytest tests/ -v
-```
-
-See [benchmarks/README.md](benchmarks/README.md) for benchmark specifications and results.
-
----
-
-## 📂 Repository Layout
-
-```text
-AgentEverywhereFlow/
-├── .github/                    # CI/CD workflows, issue templates, dependabot
-├── agenteverywhereflow/        # Core package (CLI: aef)
-│   ├── actions/                # InputDriver & CoordinateProjector
-│   ├── agent/                  # AgentLoop, Prompts & VisionPipeline (SoM)
-│   ├── capturer/               # Win32, X11 & interactive TargetSelector
-│   ├── engine/                 # Minimal (CodeAct REPL) & Guarded engines
-│   ├── cli.py                  # Typer CLI application
-│   └── config.py               # Pydantic v2 application configuration
-├── benchmarks/                 # Multi-scenario autonomous benchmark suite
-├── docs/                       # Architecture, vision pipeline, and engine docs
-├── examples/                   # Developer invocation examples & interactive demo assets
-├── tests/                      # Unit tests (pytest)
-├── pyproject.toml              # Build & dependency declarations
-├── CONTRIBUTING.md             # Developer contribution guide
-├── SECURITY.md                 # Security reporting policy
-├── AGENTS.md                   # AI Coding Agent invariants & guidelines
-└── CHANGELOG.md                # Release version history
+# 3. Validate (dry_run) or replay a recorded workflow with zero LLM calls
+curl -X POST http://127.0.0.1:8000/api/v1/workflows/run \
+  -H "Content-Type: application/json" \
+  -d '{"session_id": "session-abcd-1234", "dry_run": false, "step_delay": 0.2}'
 ```
 
 ---
 
-## 🗺️ Roadmap
+## 🏗️ Architecture & Docs
 
-- [x] **v0.1.0 ~ v0.1.3 (Foundation & Ergonomics)**:
-  - [x] Viewport abstractions: Display & Window enumeration with Target ID precision.
-  - [x] Windows native DWM / `PrintWindow` capture with Per-Monitor DPI-v2 awareness.
-  - [x] Linux X11 native drawable window capture & child hit-testing (`_find_x11_child_at`).
-  - [x] Hardware-level Win32 mouse/keyboard injection & clipboard Unicode typing.
-  - [x] Dual-mode execution engines (CodeAct REPL & Guarded Action Engine).
-  - [x] Multi-block CodeAct sequence extraction & execution.
-  - [x] Global configuration (`~/.aef/.env`) & `aef config` CLI tool.
-  - [x] Real-world benchmark suite (Form, Calculator, Guarded) & interactive showcases.
-- [ ] **v0.2.0 (Interactive HUD & Hotkeys)**:
-  - [ ] Transparent floating HUD showing real-time agent reasoning steps.
-  - [ ] Global hotkey summoning (`Win+Shift+A` / `Ctrl+Shift+A`) and instant emergency stop (`ESC`).
-- [ ] **v0.3.0 (Ecosystem Expansion)**:
-  - [ ] Linux Wayland / PipeWire portal integration.
-  - [ ] macOS ScreenCaptureKit integration.
+```mermaid
+flowchart LR
+    Target["Target Picker<br/>(Display / Window)"] --> Capture["Viewport Capturer<br/>(Win32 DWM / X11 / MSS)"]
+    Capture --> Calib["Resolution Contract<br/>(0,0) -> (W,H) + SoM"]
+    Calib --> VLM["Multimodal VLM<br/>(GPT-4o / Claude / DeepSeek)"]
+    VLM --> Engine{"Dual-Mode Engine"}
+    Engine -->|Minimal| REPL["CodeAct Python REPL"]
+    Engine -->|Guarded| Guard["JSON Schema + Approval Gate"]
+    REPL --> Driver["Projector & Native Driver<br/>(SendInput / XSendEvent)"]
+    Guard --> Driver
+```
 
----
+### Documentation & Ecosystem
 
-## 🤝 Contributing
-
-Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md) before submitting pull requests.
-
----
-
-## 📄 License
-
-This project is licensed under the [MIT License](LICENSE).
+- **Companion Web Console**: **[AgentEverywhereFlow-WebUI](https://github.com/mcocdaa/AgentEverywhereFlow-WebUI)** — React 19 + Tailwind v4 visual studio with live viewport HUD, CoT stream, approval gate, and 1-click script export.
+- **Technical Guides (`docs/`)**:
+  - [Architecture & Coordinate Projection](docs/architecture.md) · [Vision Pipeline & SoM Calibration](docs/vision_and_som.md)
+  - [Dual-Mode Execution Engine](docs/dual_mode_engine.md) · [Dialogue & Permission Gate](docs/dialogue_and_permission.md)
+  - [Multi-Target & Workflow Replay](docs/multi_target_and_workflow.md) · [WebUI & REST/WS API Spec](docs/webui_and_integration.md)
+  - [Headless Isolation Guide (Windows VDD & Docker Xvfb)](docs/headless_guide.md) · [Benchmarks](benchmarks/README.md)
+- **Contributing & License**: See [CONTRIBUTING.md](CONTRIBUTING.md), [AGENTS.md](AGENTS.md), and [MIT License](LICENSE).

@@ -1,327 +1,144 @@
 <div align="center">
 
-# 🌐 AgentEverywhereFlow (`AEFlow`)
+# AgentEverywhereFlow
 
-**Agent on Everywhere**: 任何页面与窗口皆可一键投屏召唤的具身桌面智能体基础设施。
+面向具身桌面智能体的投屏级视口隔离与 CodeAct 自动化执行引擎。
 
-[![Family: *Flow](https://img.shields.io/badge/family-*Flow-8A2BE2.svg)](https://github.com/mcocdaa)
-[![CI Status](https://github.com/mcocdaa/AgentEverywhereFlow/actions/workflows/ci.yml/badge.svg)](https://github.com/mcocdaa/AgentEverywhereFlow/actions)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Python: 3.11+](https://img.shields.io/badge/Python-3.11%2B-brightgreen.svg)](pyproject.toml)
-[![Code Style: Ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+[![Family: *Flow](https://img.shields.io/badge/Family-*Flow-8A2BE2?style=flat-square)](https://github.com/mcocdaa)
+[![CI Status](https://img.shields.io/github/actions/workflow/status/mcocdaa/AgentEverywhereFlow/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/mcocdaa/AgentEverywhereFlow/actions)
+[![Release](https://img.shields.io/github/v/release/mcocdaa/AgentEverywhereFlow?style=flat-square)](https://github.com/mcocdaa/AgentEverywhereFlow/releases)
+[![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB?style=flat-square&logo=python&logoColor=white)](pyproject.toml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue?style=flat-square)](LICENSE)
 
-[English](README.md) | [简体中文](README_CN.md)
-
-</div>
-
----
-
-<div align="center">
-
-### 🎬 真实场景自动化演示 (Real-World Demos)
-
-#### 🐱 场景 1：浏览器多模态空间感知与九宫格人机验证破解
-<img src="docs/assets/demo_captcha.gif" alt="AEFlow 九宫格人机验证演示" width="820">
-
-*零样本视觉空间定位：Agent 投屏绑定浏览器窗口，毫秒级理解九宫格任务要求，精准辨识 3 张猫咪图片依次点击打勾，并点击右下角按钮通过人机验证。*
-
-```bash
-# 在 Chrome 或 Edge 浏览器中即刻复现（使用内置 examples/captcha_demo.html）:
-aef run --target "Chrome" --task "在当前九宫格人机验证中，找出所有包含猫咪的方格依次点击选中，然后点击右下角的验证按钮"
-```
+[English](README.md) · [简体中文](README_CN.md)
 
 <br/>
 
-#### 📊 场景 2：桌面办公自动化与 Excel 表格公式自动求和
-<img src="docs/assets/demo_excel.gif" alt="AEFlow Excel 自动求和演示" width="820">
+<img src="docs/assets/demo_captcha.gif" alt="AEFlow 九宫格人机验证演示" width="780">
+<br/>
+<sub>零样本视觉空间定位：投屏级浏览器窗口视口隔离与九宫格人机验证自动破解。</sub>
 
-*桌面生产力闭环：Agent 投屏绑定 Excel 窗口，自动定位销售额列下方的空白总计单元格，注入 <code>=SUM(D2:D6)</code> 公式并敲下回车完成统计。*
+<br/><br/>
 
-```bash
-# 在 Excel 或 WPS 中即刻复现（使用内置 examples/sales_demo.xlsx）:
-aef run --target "Excel" --task "在销售额列下方的总计空白单元格点击，输入求和公式计算总金额并按回车"
-```
+<img src="docs/assets/demo_excel.gif" alt="AEFlow Excel 自动求和演示" width="780">
+<br/>
+<sub>桌面办公自动化闭环：独立投屏绑定 Excel 窗口，精准定位单元格并注入 <code>=SUM(D2:D6)</code> 公式完成统计。</sub>
 
 </div>
 
-## 💡 为什么需要 AgentEverywhereFlow？
+---
 
-现有的计算机操作智能体（Computer-Use Agent）通常存在三大痛点：
-1. **全屏视口干扰严重**：直接获取全局桌面截屏会引入无关后台窗口、系统弹窗的视觉噪音，多显示器拼接时还常出现负坐标与高分屏缩放畸变。
-2. **缺乏即时精准的投屏体验**：没有类似腾讯会议或 Zoom“屏幕共享”那样轻快的体验——让用户可以随时自由选择**整屏（显示器1/显示器2）**或**特定应用窗口（浏览器、IDE、微信、终端等）**一键投送给 Agent。
-3. **灵活性与安全性失衡**：要么被限制在死板的单步点击中，延迟高且吞吐低；要么放任执行底层命令，缺乏必要的安全围栏。
+## ✨ 核心特性
 
-**AgentEverywhereFlow (AEFlow)** 引入了全新的**投屏式视口隔离 (Screen-Cast Viewport Isolation)** 架构：
-- 🎯 **投屏式视口隔离 (Screen-Cast Picker)**：像发起会议投屏一样，一键绑定至任意物理显示器或指定应用窗口，精确裁剪渲染视口与数学坐标投影。
-- ⚡ **即刻召唤 (`aef summon`)**：支持终端交互式菜单与全局热键秒级唤起。
-- 📐 **严格空间分辨率契约**：明确视口像素空间 `(0, 0) -> (width, height)`，支持坐标网格辅助标尺与 Set-of-Mark (SoM) 候选标定。
-- 🛡️ **双模式执行引擎架构**：
-  - **极简模式 (CodeAct REPL)**：支持模型直接生成并链式执行 Python 工具代码（`click`, `type_text`, `press`, `wait`），支持多代码块序列合并执行。
-  - **受控模式 (Guarded Action Engine)**：严格 JSON Schema 原子级操作分发，提供敏感行为拦截与人机确认门禁。
-- 🎯 **递归子组件命中测试**：针对 X11 与 Win32 树状层级，自动递归查找最底层子控件 XID/HWND，保证按钮与输入框 100% 响应事件。
+- **投屏级视口选择器 (Screen-Cast Target Picker)**：像在腾讯会议/Zoom 中发起屏幕共享一样，将智能体精准绑定至任意物理显示器（`display:1`）或独立应用窗口（`window:0x...`），彻底消除全屏背景噪音与多屏负坐标畸变。
+- **严格 `(0,0) -> (W,H)` 空间分辨率契约**：每个捕获视口均严格归一化为局部像素空间 `(0, 0) -> (width, height)`，内置可选坐标标尺、Set-of-Mark (SoM) 视觉标记以及 Windows DPI-v2 / X11 递归子控件命中测试。
+- **双模式执行引擎 (Dual-Mode Execution)**：
+  - **极简模式 (Minimal CodeAct REPL)**：在受限沙箱中单轮链式编排并执行 Python 动作代码（`click`, `type_text`, `press`, `hotkey`, `wait`, `switch_to`）。
+  - **受控模式 (Guarded JSON Schema)**：严格的原子动作 Schema 校验，配合高危操作拦截器与人机确认门禁（`manual` 审批流）。
+- **标准 HTTP/WebSocket 服务 (`aef serve`) + 独立 WebUI 控制台**：无头 FastAPI 守护进程实时推送思维链 (CoT)、动作提议与隔离视口画面，无缝对接官方独立前端 **[AgentEverywhereFlow-WebUI](https://github.com/mcocdaa/AgentEverywhereFlow-WebUI)**。
+- **一键导出 Python/YAML 工作流与确定性重放**：自动录制成功执行的会话轨迹，一键导出为零大模型开销的独立 Python 脚本或声明式 YAML 工作流（`aef workflow play`）。
+- **跨窗口协同与纯后台无感隔离**：支持单会话同时绑定多个应用窗口协同操作（`aef chat -t "Chrome,Excel"`），并提供 Windows 虚拟显示器 (VDD) 与 Docker + Xvfb 无头容器方案。
 
 ---
 
-## 🏗️ 架构全景
+## 🚀 快速开始
 
-```mermaid
-flowchart TD
-    subgraph UI["1. 目标选择与发现 (Target Discovery)"]
-        CLI["CLI: aef summon / aef run"] --> Selector["TargetSelector (Rich 交互式终端菜单)"]
-        Selector --> Target["TargetInfo (HWND / XID / Rect)"]
-    end
-
-    subgraph Perception["2. 视口捕获与变换 (Viewport Engine)"]
-        Target --> CapturerRouter{"操作系统分发"}
-        CapturerRouter -->|Windows| WinCap["Win32 DWM / PrintWindow (PW_RENDERFULLCONTENT)<br/>+ Per-Monitor DPI-v2 缩放感知"]
-        CapturerRouter -->|Linux| LinCap["X11 Drawable 原生截取 (XGetImage)<br/>+ mss 多屏全屏回退"]
-        CapturerRouter -->|macOS| MacCap["ScreenCaptureKit (规划中)"]
-        WinCap --> ViewportImg["目标视口图像 (Target-Relative Image)"]
-        LinCap --> ViewportImg
-        MacCap --> ViewportImg
-    end
-
-    subgraph Calibration["3. 空间标定与视觉流水线 (Vision Pipeline)"]
-        ViewportImg --> Calib["分辨率契约: (0,0) -> (W,H)"]
-        Calib --> Grid["可选网格标尺 / SoM 标注"]
-        Grid --> VLM["多模态大模型 (GPT-4o, Claude 3.5, Qwen2-VL)"]
-    end
-
-    subgraph Execution["4. 双模式执行驱动 (Dual-Mode Engine)"]
-        VLM --> Router{"执行协议解析"}
-        Router -->|极简模式 / CodeAct| REPL["Python REPL 沙箱 (click, type, press, wait)"]
-        Router -->|受控模式| GuardedEngine["JSON Schema 受控引擎 (安全拦截网)"]
-        REPL --> Projector["CoordinateProjector (局部视口 -> 屏幕/窗口)"]
-        GuardedEngine --> Projector
-        Projector --> Driver["InputDriver (Win32 SendInput / X11 XSendEvent)"]
-        Driver --> HitTest["递归子控件命中测试 (_find_x11_child_at)"]
-    end
-```
-
----
-
-## ⚖️ 双模式执行引擎对比
-
-| 维度 | ⚡ 极简模式 (CodeAct REPL) | 🛡️ 受控模式 (Guarded Action Engine) |
-| :--- | :--- | :--- |
-| **交互协议** | Markdown Python 代码块 (```python ... ```) | 严格 JSON Schema (```json ... ```) |
-| **主要接口** | `click(x, y)`, `type_text()`, `press()`, `wait()` | `{"action": "click", "x": 100, "y": 200}` |
-| **执行效率** | 极高（单轮对话中直接完成多步链式操作） | 确定（严格逐动作用例流转与检查） |
-| **安全机制** | 限制内置函数，禁用危险 `os`/`sys` 挂钩 | 敏感动作拦截器、人机确认门禁 (`require_human_confirmation`) |
-| **推荐场景** | 快速原型验证、网页信息搜集、常规表单填写 | 金融交易、企业核心办公系统、敏感生产环境 |
-
----
-
-## ⚡ 快速上手
-
-### 安装
-
-推荐使用现代极速包管理器 [`uv`](https://github.com/astral-sh/uv) 安装：
+### 1. 安装与配置
 
 ```bash
-# 克隆代码仓库
-git clone https://github.com/mcocdaa/AgentEverywhereFlow.git
-cd AgentEverywhereFlow
+# 通过 uv 全局安装 CLI 工具
+uv tool install "git+https://github.com/mcocdaa/AgentEverywhereFlow.git"
 
-# 根据操作系统安装对应依赖
-# Linux 用户:
-uv pip install -e ".[linux]"
+# 或克隆仓库进行本地开发（支持 Linux / Windows）
+git clone https://github.com/mcocdaa/AgentEverywhereFlow.git && cd AgentEverywhereFlow
+uv sync --all-extras
 
-# Windows 用户:
-uv pip install -e ".[windows]"
-
-# 开发者全量环境:
-uv pip install -e ".[dev,linux]"
-```
-
-### 环境配置
-
-AEFlow 支持多种便捷配置方式并具备多层级自动回退机制（默认模型：`deepseek-flash` | 默认 Base URL：`https://api.deepseek.com`）：
-
-#### 方式 1：CLI 一键配置（推荐）
-免手动编辑文件，自动持久化至全局 `~/.aef/.env`：
-```bash
-# 1. 设置 API Key（系统开箱已预设为 DeepSeek）：
+# 一键配置多模态模型 API Key（自动持久化至 ~/.aef/.env，默认兼容 DeepSeek / OpenAI 接口）
 aef config --set-key "sk-your-api-key"
-
-# 2. （可选）随时切换为 OpenAI、Claude 或自定义模型：
-aef config --set-model "gpt-4o"
-aef config --set-base "https://api.openai.com/v1"
+aef config --set-model "gpt-4o" --set-base "https://api.openai.com/v1"
 ```
 
-#### 方式 2：标准环境变量识别
-AEFlow 会自动读取系统标准环境变量：
-```bash
-export OPENAI_API_KEY="sk-your-api-key"
-
-# 可选覆盖项（开箱默认即为 https://api.deepseek.com 与 deepseek-flash）：
-export OPENAI_BASE_URL="https://api.deepseek.com"
-export OPENAI_MODEL_NAME="deepseek-flash"
-```
-
-#### 方式 3：本地项目级 `.env`
-也可以在当前工作目录下放置 `.env` 文件：
-```ini
-AEF_MODEL_NAME=deepseek-flash
-AEF_BASE_URL=https://api.deepseek.com
-AEF_API_KEY=your_api_key_here
-AEF_DEFAULT_MODE=minimal
-```
-
----
-
-### 🖥️ 独立 Web 控制台配套项目：AgentEverywhereFlow-WebUI
-
-对于希望拥有沉浸式可视化交互驾驶舱的用户与团队，推荐使用官方独立前端伴侣：
-👉 **[AgentEverywhereFlow-WebUI](https://github.com/mcocdaa/AgentEverywhereFlow-WebUI)**（基于 React 19、Tailwind CSS v4 与 Vite 打造的现代纯纯 Web 控制台）。
-
-- 📺 **像素级精准视口隔离监控**：实时光标相对坐标 HUD (`(X, Y)`) 与雷达波纹动作指示。
-- 💬 **连续多轮对话流**：清晰区分操作者意图、可折叠思维链 (CoT) 与高保真 CodeAct 执行回执。
-- 🛡️ **Human-in-the-Loop 安全门禁**：在受控模式下实时拦截物理输入注入，支持一键批准或带有指导说明的驳回。
-- 📦 **零 Token 零 API 独立脚本导出**：一键导出为纯 Python 原生执行重放脚本。
+### 2. 召唤与执行
 
 ```bash
-# 1. 启动无头后端服务守护进程
-aef serve --host 127.0.0.1 --port 8000
-
-# 2. 在 AgentEverywhereFlow-WebUI 目录中启动前端：
-pnpm dev   # 浏览器打开 http://localhost:5173
-```
-
----
-
-## 🕹️ CLI 常用命令
-
-```bash
-# 1. 启动交互式投屏目标选择器并召唤智能体
+# 启动交互式投屏目标选择器并召唤智能体
 aef summon
 
-# 2. 列出当前可用物理显示器与应用窗口（带 Target ID 与 HWND 句柄）
-aef list-targets
+# 按窗口标题关键字直接绑定并执行自主任务
+aef run --target "Chrome" --task "在当前九宫格人机验证中找出所有包含猫咪的方格依次点击，然后点击验证"
 
-# 3. 按窗口标题关键字匹配召唤
-aef run --target "Chrome" --task "帮我在页面里搜索最近的 GitHub Trending 项目"
-
-# 4. 跨应用多窗口协同交互对话（一次绑定多个窗口，如 Chrome 与 Excel）
+# 跨窗口连续多轮对话，并开启人工安全审批门禁
 aef chat --target "Chrome,Excel" --permission manual
 
-# 5. 启动后台对话服务守护进程（提供 REST API + 实时双向 WebSocket，内置 Swagger: http://localhost:8000/docs）
-aef serve --host 127.0.0.1 --port 8000
-
-# 6. 零大模型调用、零 Token 消耗的高速确定性重放录制工作流
+# 零 Token、零大模型调用的确定性高速重放录制工作流
 aef workflow play ~/.aef/workflows/sales_pipeline.yaml --speed 1.5
-
-# 7. 断点续跑历史会话
-aef chat --resume latest
-
-# 8. 检查并一键在线自更新升级
-aef update
-
-# 9. 查看当前生效的完整配置
-aef config
-
-# 10. 查看系统信息与已安装版本
-aef version
 ```
 
----
+### 3. 启动 WebUI 控制台与后台服务 (`aef serve`)
 
-## 💻 代码中调用 (Python API)
+```bash
+# 启动标准 REST + WebSocket 服务守护进程（Swagger 文档位于 http://127.0.0.1:8000/docs）
+aef serve --host 127.0.0.1 --port 8000
 
-你可以方便地将 AEFlow 嵌入进自己的自动化工作流中：
+# 或直接在浏览器中拉起交互式 WebUI Studio
+aef ui
+```
+
+### 4. Python SDK 调用
 
 ```python
-from agenteverywhereflow.capturer import get_capturer
 from agenteverywhereflow.agent.loop import AgentLoop
+from agenteverywhereflow.capturer import get_capturer
 from agenteverywhereflow.config import AppConfig, ExecutionMode
 
-# 1. 发现系统活动目标
-capturer = get_capturer()
-targets = capturer.list_targets()
-target = targets[0]  # 例如 VS Code、终端窗口或显示器 1
-
-# 2. 初始化智能体循环
+target = get_capturer().list_targets()[0]
 loop = AgentLoop(app_config=AppConfig(default_mode=ExecutionMode.MINIMAL_PYTHON))
-
-# 3. 运行端到端任务
 loop.run(target=target, user_task="录入表单数据并点击提交按钮")
 ```
 
-更多进阶用法、自定义规划器回调与演示测试资产请参阅 [examples/](examples/) 目录。
-
 ---
 
-## 🧪 自动化基准测试集
+## 🤖 AI 与 API 调用
 
-AEFlow 内置了基于真实桌面 GUI 窗口的高保真端到端基准测试：
+当 `aef serve --port 8000` 运行时，外部编排系统、CI 流水线或上层 AI 智能体可通过 REST API 与全双工 WebSocket（`/api/v1/sessions/{id}/ws`）直接驱动桌面会话、导出轨迹并触发零 LLM 重放：
 
 ```bash
-# 运行三合一综合场景基准测试（企业表单、紧凑计算器、受控模式）
-uv run python -m benchmarks.bench_suite
+# 1. 创建绑定至指定应用窗口或显示器的隔离视口会话
+curl -X POST http://127.0.0.1:8000/api/v1/sessions \
+  -H "Content-Type: application/json" \
+  -d '{"target_id": "window:0x3400012", "mode": "minimal_python", "permission_mode": "auto"}'
 
-# 运行单用例自主目标收敛测试
-uv run python -m benchmarks.bench_autonomous
+# 2. 将已录制的会话轨迹导出为声明式 YAML 工作流（或指定 format=python 导出独立脚本）
+curl "http://127.0.0.1:8000/api/v1/sessions/session-abcd-1234/export?format=yaml"
 
-# 运行标准单元测试
-uv run pytest tests/ -v
-```
-
-更多测试细节与产物说明请参阅 [benchmarks/README.md](benchmarks/README.md)。
-
----
-
-## 📂 项目结构全景
-
-```text
-AgentEverywhereFlow/
-├── .github/                    # CI/CD 工作流、Issue/PR 模板、Dependabot
-├── agenteverywhereflow/        # 核心源码包 (CLI: aef)
-│   ├── actions/                # 底层驱动 (driver.py) 与坐标投影 (coords.py)
-│   ├── agent/                  # 智能体中枢 (loop.py)、提示词与视觉管线 (vision.py)
-│   ├── capturer/               # Win32, X11 零拷贝捕获器与 TargetSelector
-│   ├── engine/                 # 极简模式 (CodeAct) 与受控模式执行引擎
-│   ├── cli.py                  # Typer 终端命令行入口
-│   └── config.py               # Pydantic v2 配置模型
-├── benchmarks/                 # 自动化端到端高保真基准测试集
-├── docs/                       # 核心架构、视觉标定与执行引擎详细文档
-├── examples/                   # 开发者 Python 调用示例与互动演示资产
-├── tests/                      # 单元测试 (pytest)
-├── pyproject.toml              # 现代包构建规范
-├── CONTRIBUTING.md             # 开发者贡献指南
-├── SECURITY.md                 # 安全策略与漏洞通报
-├── AGENTS.md                   # 面向 AI Coding Agent 的操作指南
-└── CHANGELOG.md                # 版本演进日志
+# 3. 校验（dry_run）或免大模型确定性重放已录制的工作流
+curl -X POST http://127.0.0.1:8000/api/v1/workflows/run \
+  -H "Content-Type: application/json" \
+  -d '{"session_id": "session-abcd-1234", "dry_run": false, "step_delay": 0.2}'
 ```
 
 ---
 
-## 🗺️ 演进路线图 (Roadmap)
+## 🏗️ 架构与文档
 
-- [x] **v0.1.0 ~ v0.1.3 (核心基座与体验加固)**:
-  - [x] 跨平台视口抽象：显示器全屏与独立窗口枚举，支持 Target ID 精准定位。
-  - [x] Windows 原生 DWM / `PrintWindow` 捕获与 Per-Monitor DPI-v2 缩放支持。
-  - [x] Linux X11 独立 Drawable 原生捕获与递归子组件事件分发 (`_find_x11_child_at`)。
-  - [x] 硬件级 Win32 鼠标点击注入、前台输入锁穿透与剪贴板中文防输入法拦截输入。
-  - [x] 双模式执行引擎基座（极简 Python CodeAct REPL + 细粒度受控模式）。
-  - [x] 多代码块 CodeAct 序列自动合并执行与终端 ANSI 输出隔离。
-  - [x] 全局 `~/.aef/.env` 级联配置系统与 `aef config` 交互命令。
-  - [x] 端到端高保真基准测试套件（表单、计算器、受控模式）与真实动效展示。
-- [ ] **v0.2.0 (交互式 HUD)**:
-  - [ ] 基于轻量级半透明浮窗的智能体状态与思考流 HUD。
-  - [ ] 全局快捷键呼出 (`Win+Shift+A` / `Ctrl+Shift+A`) 与一键急停刹车 (`ESC`)。
-- [ ] **v0.3.0 (跨平台深化)**:
-  - [ ] Linux Wayland / PipeWire portal 原生集成。
-  - [ ] macOS ScreenCaptureKit 视口集成。
+```mermaid
+flowchart LR
+    Target["投屏目标选择<br/>(显示器 / 应用窗口)"] --> Capture["原生视口捕获<br/>(Win32 DWM / X11 / MSS)"]
+    Capture --> Calib["分辨率空间契约<br/>(0,0) -> (W,H) + SoM"]
+    Calib --> VLM["多模态大模型<br/>(GPT-4o / Claude / DeepSeek)"]
+    VLM --> Engine{"双模式执行引擎"}
+    Engine -->|Minimal| REPL["CodeAct Python 沙箱"]
+    Engine -->|Guarded| Guard["JSON Schema + 人工审批门禁"]
+    REPL --> Driver["坐标投影与系统驱动<br/>(SendInput / XSendEvent)"]
+    Guard --> Driver
+```
 
----
+### 深入文档与生态
 
-## 🤝 参与贡献
-
-欢迎提出任何改进建议或提交 PR！提交前请查阅 [CONTRIBUTING.md](CONTRIBUTING.md) 与 [AGENTS.md](AGENTS.md)。
-
----
-
-## 📄 开源许可证
-
-本项目采用 [MIT 许可证](LICENSE)。
+- **独立 Web 控制台伴侣**：**[AgentEverywhereFlow-WebUI](https://github.com/mcocdaa/AgentEverywhereFlow-WebUI)** —— 基于 React 19 + Tailwind v4 打造的可视化工作台，支持实时视口坐标 HUD、思维链流式展示、人工安全审批门禁与一键脚本导出。
+- **技术专题文档 (`docs/`)**：
+  - [核心架构与坐标投影契约](docs/architecture.md) · [视觉标定与 SoM 流水线](docs/vision_and_som.md)
+  - [双模式执行引擎详解](docs/dual_mode_engine.md) · [多轮对话与权限安全门禁](docs/dialogue_and_permission.md)
+  - [跨窗口协同与工作流重放](docs/multi_target_and_workflow.md) · [WebUI 与 REST/WS 接口规范](docs/webui_and_integration.md)
+  - [纯后台无感运行与无头隔离指南 (Windows VDD & Docker Xvfb)](docs/headless_guide.md) · [端到端基准测试集](benchmarks/README.md)
+- **贡献与开源协议**：请参阅 [CONTRIBUTING.md](CONTRIBUTING.md)、[AGENTS.md](AGENTS.md) 与 [MIT 许可证](LICENSE)。
