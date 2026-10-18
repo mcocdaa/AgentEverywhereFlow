@@ -26,7 +26,7 @@ class InputDriver:
                 pyautogui.FAILSAFE = False
                 self._gui_backend = pyautogui
                 self._backend_available = True
-            except Exception:
+            except (Exception, SystemExit):
                 self._backend_available = False
                 self._gui_backend = None
                 return None
