@@ -222,13 +222,13 @@ def create_app() -> FastAPI:
         <p>The headless dialogue service & viewport isolation engine is active and ready to accept API and WebSocket requests.</p>
         
         <div class="actions">
-            <a href="/docs" class="btn btn-primary">📖 Swagger API Docs</a>
-            <a href="/api/v1/health" class="btn btn-outline">⚡ Health Check API</a>
-            <a href="/api/v1/targets" class="btn btn-outline">🖥️ List System Targets</a>
+            <a href="/docs" class="btn btn-primary">Swagger API Docs</a>
+            <a href="/api/v1/health" class="btn btn-outline">Health Check API</a>
+            <a href="/api/v1/targets" class="btn btn-outline">List System Targets</a>
         </div>
 
         <div class="guide-box">
-            <div class="guide-header">💡 How to launch the interactive WebUI Console:</div>
+            <div class="guide-header">How to launch the interactive WebUI Console:</div>
             <div class="comment"># In your terminal, launch the companion frontend:</div>
             <div>cd <span class="code">AgentEverywhereFlow-WebUI</span></div>
             <div><span class="code">pnpm dev</span></div>
