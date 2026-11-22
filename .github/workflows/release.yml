@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -36,7 +37,7 @@ jobs:
       - name: Verify version matches git tag
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
-          python3 -c "import os, tomllib; expected = os.environ['GITHUB_REF_NAME'].lstrip('v'); actual = tomllib.load(open('pyproject.toml', 'rb'))['project']['version']; assert actual == expected, f'pyproject.toml version {actual} != tag {expected}'"
+          uv run python3 -c "import os, tomllib, agenteverywhereflow; expected = os.environ['GITHUB_REF_NAME'].removeprefix('v'); pv = tomllib.load(open('pyproject.toml', 'rb'))['project']['version']; iv = agenteverywhereflow.__version__; assert pv == expected and iv == expected, f'pyproject={pv}, __version__={iv}, expected={expected}'"
 
       - name: Run quality & unit checks
         run: |
@@ -51,6 +52,7 @@ jobs:
           python3 -c "import glob, zipfile; whls = glob.glob('dist/*.whl'); assert whls, 'No wheel built'; z = zipfile.ZipFile(whls[0]); assert any('webui_dist/index.html' in n for n in z.namelist()), 'webui_dist/index.html missing from wheel'"
 
       - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v3
         with:
           files: |
