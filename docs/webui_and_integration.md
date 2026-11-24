@@ -12,8 +12,8 @@ AgentEverywhereFlow 坚持 **"无头核心 (Headless Core) + 独立客户端 (De
   - 极致轻量、零 GUI 重型依赖（无 Qt、无 Electron、无 Node 环境）。
   - 基于 FastAPI + Uvicorn 提供 REST API 与全双工 WebSocket 服务。
   - 核心职责：跨平台视口捕获、局部与物理坐标变换、VLM 循环推理、原生键鼠事件注入、权限安全门禁与会话状态落盘。
-- **独立控制台前端 (`AgentEverywhereFlow-WebUI`)**：
-  - 独立代码仓库：[`mcocdaa/AgentEverywhereFlow-WebUI`](https://github.com/mcocdaa/AgentEverywhereFlow-WebUI)。
+- **独立前端套件 (`AgentEverywhereFlow-UI`)**：
+  - 独立代码仓库：[`mcocdaa/AgentEverywhereFlow-UI`](https://github.com/mcocdaa/AgentEverywhereFlow-UI)（包含内嵌 WebUI 控制台与 Tauri v2 轻量桌面端）。
   - 基于 React 19 + TypeScript + Vite + Tailwind CSS v4 打造的现代 SPA。
   - 任意平台（Linux / macOS / Windows / 移动平板）浏览器直开，零配置即连。
 

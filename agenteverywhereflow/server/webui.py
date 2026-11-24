@@ -15,7 +15,7 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
-WEBUI_REPO = "mcocdaa/AgentEverywhereFlow-WebUI"
+WEBUI_REPO = "mcocdaa/AgentEverywhereFlow-UI"
 VERSION_MARKER_NAME = "version.json"
 LEGACY_MARKER_NAME = ".installed"
 
@@ -31,12 +31,13 @@ def _get_user_webui_dist() -> Path:
 
 
 def _get_sibling_webui_dist() -> Path | None:
-    """Return a sibling AgentEverywhereFlow-WebUI/dist directory if present (local dev)."""
+    """Return a sibling AgentEverywhereFlow-UI/dist directory if present (local dev)."""
     parents = Path(__file__).resolve().parents
     if len(parents) > 3:
-        candidate = parents[3] / "AgentEverywhereFlow-WebUI" / "dist"
-        if (candidate / "index.html").is_file():
-            return candidate
+        for repo_name in ("AgentEverywhereFlow-UI", "AgentEverywhereFlow-WebUI"):
+            candidate = parents[3] / repo_name / "dist"
+            if (candidate / "index.html").is_file():
+                return candidate
     return None
 
 
@@ -93,7 +94,7 @@ def get_webui_dist_path() -> Path | None:
        a ``version.json`` / ``.installed`` marker or newer timestamp is present
     3. Package-embedded dist (``agenteverywhereflow/server/webui_dist``)
     4. Legacy user root (``~/.aef/webui``) or unmarked user dist fallback
-    5. Sibling repository fallback (``../AgentEverywhereFlow-WebUI/dist``)
+    5. Sibling repository fallback (``../AgentEverywhereFlow-UI/dist``)
     """
     # 1. Custom env var override
     env_dir = os.environ.get("AEF_WEBUI_DIR")

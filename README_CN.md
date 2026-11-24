@@ -35,7 +35,7 @@
 - **双模式执行引擎 (Dual-Mode Execution)**：
   - **极简模式 (Minimal CodeAct REPL)**：在受限沙箱中单轮链式编排并执行 Python 动作代码（`click`, `type_text`, `press`, `hotkey`, `wait`, `switch_to`）。
   - **受控模式 (Guarded JSON Schema)**：严格的原子动作 Schema 校验，配合高危操作拦截器与人机确认门禁（`manual` 审批流）。
-- **标准 HTTP/WebSocket 服务 (`aef serve`) + 独立 WebUI 控制台**：无头 FastAPI 守护进程实时推送思维链 (CoT)、动作提议与隔离视口画面，无缝对接官方独立前端 **[AgentEverywhereFlow-WebUI](https://github.com/mcocdaa/AgentEverywhereFlow-WebUI)**。
+- **标准 HTTP/WebSocket 服务 (`aef serve`) + 独立前端套件**：无头 FastAPI 守护进程实时推送思维链 (CoT)、动作提议与隔离视口画面，无缝对接官方前端仓库 **[AgentEverywhereFlow-UI](https://github.com/mcocdaa/AgentEverywhereFlow-UI)**（内嵌 WebUI 控制台 + Tauri v2 轻量桌面端）。
 - **一键导出 Python/YAML 工作流与确定性重放**：自动录制成功执行的会话轨迹，一键导出为零大模型开销的独立 Python 脚本或声明式 YAML 工作流（`aef workflow play`）。
 - **跨窗口协同与纯后台无感隔离**：支持单会话同时绑定多个应用窗口协同操作（`aef chat -t "Chrome,Excel"`），并提供 Windows 虚拟显示器 (VDD) 与 Docker + Xvfb 无头容器方案。
 
@@ -148,7 +148,7 @@ flowchart LR
 
 ### 深入文档与生态
 
-- **独立 Web 控制台伴侣**：**[AgentEverywhereFlow-WebUI](https://github.com/mcocdaa/AgentEverywhereFlow-WebUI)** —— 基于 React 19 + Tailwind v4 打造的可视化工作台，支持实时视口坐标 HUD、思维链流式展示、人工安全审批门禁与一键脚本导出。
+- **官方 UI 伴侣套件**：**[AgentEverywhereFlow-UI](https://github.com/mcocdaa/AgentEverywhereFlow-UI)** —— 集成内嵌 React 19 + Tailwind v4 WebUI 工作台与轻量级 Tauri v2 桌面启动器（`AEFlow Desktop`），支持全局热键唤起、可视化选窗/框选、实时视口 HUD、思维链流式展示、人工审批门禁与一键脚本导出。
 - **技术专题文档 (`docs/`)**：
   - [核心架构与坐标投影契约](docs/architecture.md) · [视觉标定与 SoM 流水线](docs/vision_and_som.md)
   - [双模式执行引擎详解](docs/dual_mode_engine.md) · [多轮对话与权限安全门禁](docs/dialogue_and_permission.md)

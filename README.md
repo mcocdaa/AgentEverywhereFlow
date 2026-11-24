@@ -35,7 +35,7 @@ Screen-cast style viewport isolation & CodeAct execution engine for embodied des
 - **Dual-Mode Execution Engine**:
   - **Minimal Mode (CodeAct REPL)**: High-throughput Python action chaining (`click`, `type_text`, `press`, `hotkey`, `wait`, `switch_to`) in a restricted sandbox.
   - **Guarded Mode (JSON Schema)**: Deterministic atomic action validation with policy interceptors and human-in-the-loop (`manual`) approval gates.
-- **Canonical HTTP/WebSocket API (`aef serve`) + Standalone WebUI**: Headless FastAPI daemon streaming real-time reasoning, action proposals, and isolated viewport frames to **[AgentEverywhereFlow-WebUI](https://github.com/mcocdaa/AgentEverywhereFlow-WebUI)**.
+- **Canonical HTTP/WebSocket API (`aef serve`) + Standalone UI Suite**: Headless FastAPI daemon streaming real-time reasoning, action proposals, and isolated viewport frames to **[AgentEverywhereFlow-UI](https://github.com/mcocdaa/AgentEverywhereFlow-UI)** (embedded WebUI Studio + Tauri v2 Desktop Launcher).
 - **One-Click Session-to-Python/YAML Workflow Export**: Record successful agent trajectories and export them to zero-LLM Python scripts or declarative YAML workflows for deterministic replay (`aef workflow play`).
 - **Multi-Target & Zero-Disturbance Headless Isolation**: Coordinate tasks across multiple bound windows (`aef chat -t "Chrome,Excel"`) or run completely silently via Windows Virtual Display Driver (VDD) and Docker + Xvfb containers.
 
@@ -148,7 +148,7 @@ flowchart LR
 
 ### Documentation & Ecosystem
 
-- **Companion Web Console**: **[AgentEverywhereFlow-WebUI](https://github.com/mcocdaa/AgentEverywhereFlow-WebUI)** — React 19 + Tailwind v4 visual studio with live viewport HUD, CoT stream, approval gate, and 1-click script export.
+- **Companion UI Suite**: **[AgentEverywhereFlow-UI](https://github.com/mcocdaa/AgentEverywhereFlow-UI)** — embedded React 19 + Tailwind v4 WebUI Studio and lightweight Tauri v2 Desktop Launcher (`AEFlow Desktop`) with global hotkey summon, visual window/region picker, CoT stream, approval gate, and 1-click script export.
 - **Technical Guides (`docs/`)**:
   - [Architecture & Coordinate Projection](docs/architecture.md) · [Vision Pipeline & SoM Calibration](docs/vision_and_som.md)
   - [Dual-Mode Execution Engine](docs/dual_mode_engine.md) · [Dialogue & Permission Gate](docs/dialogue_and_permission.md)

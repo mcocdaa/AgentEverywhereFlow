@@ -6,7 +6,7 @@ description: >-
 
 # AgentEverywhereFlow (AEFlow) Development & Operations Runbook
 
-This skill equips coding agents with end-to-end knowledge and runbooks for developing, running, debugging, and testing **AgentEverywhereFlow (AEFlow)** and its companion **AgentEverywhereFlow-WebUI**.
+This skill equips coding agents with end-to-end knowledge and runbooks for developing, running, debugging, and testing **AgentEverywhereFlow (AEFlow)** and its companion **AgentEverywhereFlow-UI** (WebUI Studio + Tauri v2 Desktop Launcher).
 
 ---
 
@@ -22,7 +22,7 @@ This skill equips coding agents with end-to-end knowledge and runbooks for devel
    - **Guarded Mode**: 返回结构化 JSON 工具调用（`{"action": "click", "params": {...}}`），经过安全策略过滤和人工审批门禁后执行。
 3. **无头核心与独立客户端完全解耦**:
    - `AgentEverywhereFlow` 核心库绝不引入 Electron、Qt 或 Node 等重型 GUI 依赖，通过 `aef serve` 输出标准 REST 与 WebSocket 接口。
-   - `AgentEverywhereFlow-WebUI` 为纯独立前端项目（React 19 + TypeScript + Vite + Tailwind CSS v4）。
+   - `AgentEverywhereFlow-UI` 为纯独立前端仓库（根目录为 React 19 + TypeScript + Vite + Tailwind CSS v4 WebUI Studio，`desktop/` 为 Tauri v2 桌面伴侣）。
 4. **仓库整洁性**:
    - 严禁在仓库根目录下堆放测试脚本或临时截图。临时产物必须生成在 `.aef_cache/` 或系统临时目录中。
 
@@ -46,7 +46,7 @@ This skill equips coding agents with end-to-end knowledge and runbooks for devel
 ### 2.2 WebUI Commands
 
 ```bash
-cd AgentEverywhereFlow-WebUI
+cd AgentEverywhereFlow-UI
 pnpm install       # 安装依赖
 pnpm dev           # 启动开发服务器 (http://localhost:5173)
 pnpm lint          # 静态检查 (Oxlint)
