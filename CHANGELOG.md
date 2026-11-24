@@ -3,6 +3,13 @@
 所有关于 **AgentEverywhereFlow (AEFlow)** 的重要变动都将记录在此文件中。  
 本项目遵循 [Semantic Versioning (语义化版本 2.0.0)](https://semver.org/lang/zh-CN/) 与 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/) 规范。
 
+## [0.2.1-rc.1] - 2026-11-24
+
+### 新增与优化 (Added & Improved)
+- **跨窗口 / 跨显示器共享上下文**：`ChatSession` 新增 `rebind_targets(..., replace_pool=True, cdp_backend=...)`，升级 `POST /api/v1/sessions/{session_id}/target` 支持同一对话在应用窗口、显示器、自定义框选区域、多目标与无头 CDP 标签页之间无缝切换，完整保留对话历史与步骤上下文。
+- **macOS 拾取器命中增强**：`MacCapturer.target_at_point` 排除 `AEFlow Desktop` 自身透明层，并在未命中窗口时自动回退至对应显示器；`GET /api/v1/targets/at-point` 同步补齐显示器回退逻辑。
+- **Pre-release 发布支持**：Release 流水线支持 PEP 440 预发布版本号校验（如 `v0.2.1-rc.1` ↔ `0.2.1rc1`）并自动标记 GitHub Pre-release。
+
 ## [0.2.0] - 2026-11-24
 
 ### 新增与核心特性 (Added & Core Features)
