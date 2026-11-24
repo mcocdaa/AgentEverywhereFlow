@@ -42,6 +42,8 @@ def clean_provider_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     for var in PROVIDER_ENV_VARS:
         monkeypatch.delenv(var, raising=False)
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
     return tmp_path
 
 

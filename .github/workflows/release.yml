@@ -52,7 +52,7 @@ jobs:
           python3 -c "import glob, zipfile; whls = glob.glob('dist/*.whl'); assert whls, 'No wheel built'; z = zipfile.ZipFile(whls[0]); names = z.namelist(); assert any('webui_dist/index.html' in n for n in names), 'webui_dist/index.html missing from wheel'; eps = [n for n in names if n.endswith('entry_points.txt')]; assert eps, 'entry_points.txt missing from wheel'; ep = z.read(eps[0]).decode('utf-8'); assert 'aef =' in ep and 'agenteverywhereflow =' in ep, f'Missing CLI entrypoints: {ep}'"
 
       - name: Upload built distributions
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: python-dist
           path: |
@@ -70,7 +70,7 @@ jobs:
       contents: write
     steps:
       - name: Download built distributions
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: python-dist
           path: dist
@@ -93,7 +93,7 @@ jobs:
       id-token: write
     steps:
       - name: Download built distributions
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: python-dist
           path: dist

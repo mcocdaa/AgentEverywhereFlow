@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import ctypes
 import importlib
+import importlib.util
 import logging
 import sys
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -42,6 +43,71 @@ from agenteverywhereflow.workflow.runner import WorkflowRunner
 # =============================================================================
 # 1. Linux Session Detection & LinuxCapturer Tests
 # =============================================================================
+def _prepare_xlib_for_test(
+    monkeypatch: pytest.MonkeyPatch, *, force_stub: bool = False
+) -> MagicMock:
+    """Provide stub Xlib modules on non-Linux hosts or patch fake_input on Linux."""
+    if not force_stub and importlib.util.find_spec("Xlib") is not None:
+        mock_fake_input = MagicMock()
+        monkeypatch.setattr("Xlib.ext.xtest.fake_input", mock_fake_input)
+        return mock_fake_input
+
+    xlib_mod = ModuleType("Xlib")
+    x_mod = ModuleType("Xlib.X")
+    xk_mod = ModuleType("Xlib.XK")
+    ext_mod = ModuleType("Xlib.ext")
+    xtest_mod = ModuleType("Xlib.ext.xtest")
+
+    for attr, val in {
+        "ZPixmap": 2,
+        "AnyPropertyType": 0,
+        "MotionNotify": 6,
+        "ButtonPress": 4,
+        "ButtonRelease": 5,
+        "KeyPress": 2,
+        "KeyRelease": 3,
+        "CurrentTime": 0,
+        "NONE": 0,
+        "PointerRoot": 1,
+        "ShiftMask": 1,
+        "ControlMask": 4,
+        "Mod1Mask": 8,
+        "Mod4Mask": 64,
+        "Button1Mask": 256,
+        "Button2Mask": 512,
+        "Button3Mask": 1024,
+        "ButtonPressMask": 4,
+        "ButtonReleaseMask": 8,
+        "KeyPressMask": 1,
+        "KeyReleaseMask": 2,
+    }.items():
+        setattr(x_mod, attr, val)
+
+    xk_mod.string_to_keysym = (  # type: ignore[attr-defined]
+        lambda name: (
+            (sum((i + 1) * ord(ch) for i, ch in enumerate(name)) % 60000 + 1) if name else 0
+        )
+    )
+    mock_fake_input = MagicMock()
+    xtest_mod.fake_input = mock_fake_input  # type: ignore[attr-defined]
+
+    xlib_mod.X = x_mod  # type: ignore[attr-defined]
+    xlib_mod.XK = xk_mod  # type: ignore[attr-defined]
+    xlib_mod.ext = ext_mod  # type: ignore[attr-defined]
+    ext_mod.xtest = xtest_mod  # type: ignore[attr-defined]
+
+    for mod_name, mod_obj in (
+        ("Xlib", xlib_mod),
+        ("Xlib.X", x_mod),
+        ("Xlib.XK", xk_mod),
+        ("Xlib.ext", ext_mod),
+        ("Xlib.ext.xtest", xtest_mod),
+    ):
+        monkeypatch.setitem(sys.modules, mod_name, mod_obj)
+
+    return mock_fake_input
+
+
 def test_detect_linux_session_type(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("XDG_SESSION_TYPE", raising=False)
     monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
@@ -122,6 +188,7 @@ def test_linux_capturer_populates_process_name_and_pid(monkeypatch: pytest.Monke
 
 
 def test_linux_capturer_refreshes_window_rect_on_capture(monkeypatch: pytest.MonkeyPatch) -> None:
+    _prepare_xlib_for_test(monkeypatch)
     monkeypatch.setenv("XDG_SESSION_TYPE", "x11")
     capturer = LinuxCapturer()
     win_target = TargetInfo(
@@ -166,6 +233,7 @@ def test_linux_capturer_wayland_warning_emitted_once(
 
 
 def test_linux_capturer_z_order_target_at_point(monkeypatch: pytest.MonkeyPatch) -> None:
+    _prepare_xlib_for_test(monkeypatch)
     monkeypatch.setenv("XDG_SESSION_TYPE", "x11")
     capturer = LinuxCapturer()
 
@@ -238,17 +306,19 @@ def test_windows_capturer_region_preserves_rect_even_with_native_handle() -> Non
 # =============================================================================
 # 3. Cross-Platform InputDriver Tests (Linux XTest, macOS CGEvent, Win SendInput)
 # =============================================================================
-def test_linux_driver_uses_xtest_by_default_and_handles_display1() -> None:
+def test_linux_driver_uses_xtest_by_default_and_handles_display1(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    driver_mod = importlib.import_module("agenteverywhereflow.actions.driver")
+    monkeypatch.setattr(driver_mod.sys, "platform", "linux")
+    mock_fake_input = _prepare_xlib_for_test(monkeypatch)
     drv = InputDriver()
     fake_disp = MagicMock()
     fake_disp.screen.return_value = SimpleNamespace(
         root=SimpleNamespace(query_pointer=lambda: SimpleNamespace(root_x=10, root_y=20))
     )
 
-    with (
-        patch.object(drv, "_get_x11_display", return_value=fake_disp),
-        patch("Xlib.ext.xtest.fake_input") as mock_fake_input,
-    ):
+    with patch.object(drv, "_get_x11_display", return_value=fake_disp):
         # Click on display:1 (window_handle=0) must use XTest and sync()
         drv.click(x=400, y=300, button="left", clicks=1, window_handle=0, restore_cursor=True)
 
@@ -258,17 +328,19 @@ def test_linux_driver_uses_xtest_by_default_and_handles_display1() -> None:
     fake_disp.create_resource_object.assert_not_called()
 
 
-def test_linux_driver_rejects_invalid_xid_1_even_with_xsendevent() -> None:
+def test_linux_driver_rejects_invalid_xid_1_even_with_xsendevent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    driver_mod = importlib.import_module("agenteverywhereflow.actions.driver")
+    monkeypatch.setattr(driver_mod.sys, "platform", "linux")
+    mock_fake_input = _prepare_xlib_for_test(monkeypatch)
     drv = InputDriver(use_xsendevent=True)
     fake_disp = MagicMock()
     fake_disp.screen.return_value = SimpleNamespace(
         root=SimpleNamespace(query_pointer=lambda: SimpleNamespace(root_x=0, root_y=0))
     )
 
-    with (
-        patch.object(drv, "_get_x11_display", return_value=fake_disp),
-        patch("Xlib.ext.xtest.fake_input") as mock_fake_input,
-    ):
+    with patch.object(drv, "_get_x11_display", return_value=fake_disp):
         drv.click(x=120, y=240, window_handle=1, restore_cursor=False)
 
     # XID 1 rejected before create_resource_object; cleanly falls through to XTest
@@ -277,15 +349,15 @@ def test_linux_driver_rejects_invalid_xid_1_even_with_xsendevent() -> None:
     fake_disp.sync.assert_called()
 
 
-def test_linux_driver_xtest_keys_and_hotkeys() -> None:
+def test_linux_driver_xtest_keys_and_hotkeys(monkeypatch: pytest.MonkeyPatch) -> None:
+    driver_mod = importlib.import_module("agenteverywhereflow.actions.driver")
+    monkeypatch.setattr(driver_mod.sys, "platform", "linux")
+    mock_fake_input = _prepare_xlib_for_test(monkeypatch)
     drv = InputDriver()
     fake_disp = MagicMock()
     fake_disp.keysym_to_keycode.side_effect = lambda ks: 50 + (ks % 50)
 
-    with (
-        patch.object(drv, "_get_x11_display", return_value=fake_disp),
-        patch("Xlib.ext.xtest.fake_input") as mock_fake_input,
-    ):
+    with patch.object(drv, "_get_x11_display", return_value=fake_disp):
         drv.press_key("pageup")
         drv.press_key("f5")
         drv.hotkey("ctrl", "alt", "left")

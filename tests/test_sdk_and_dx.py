@@ -2,6 +2,7 @@
 
 import io
 import os
+import re
 import subprocess
 import sys
 import tomllib
@@ -41,6 +42,19 @@ from agenteverywhereflow.session import ChatSession
 from agenteverywhereflow.workflow import WorkflowDefinition, WorkflowExporter, WorkflowStep
 
 cli_runner = CliRunner()
+_ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
+
+
+def _strip_ansi(text: str) -> str:
+    """Strip ANSI SGR escape sequences so Rich/Typer help checks are terminal-agnostic."""
+    return _ANSI_ESCAPE_RE.sub("", text)
+
+
+def _isolate_home(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Isolate Path.home() / USERPROFILE / HOME across POSIX and Windows runners."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
 
 
 def _make_target(title: str = "Chrome - Docs", target_id: str = "xwin:0x101") -> TargetInfo:
@@ -245,12 +259,13 @@ def test_sdk_agent_do_screenshot_and_chat() -> None:
 
 
 def test_cli_run_no_dash_d_flag_collision() -> None:
-    help_res = cli_runner.invoke(app, ["run", "--help"])
+    help_res = cli_runner.invoke(app, ["run", "--help"], env={"NO_COLOR": "1", "TERM": "dumb"})
     assert help_res.exit_code == 0
-    assert "-D" in help_res.stdout
-    assert "--to-display" in help_res.stdout
-    assert "-d" in help_res.stdout
-    assert "--debug" in help_res.stdout
+    plain_help = _strip_ansi(help_res.stdout)
+    assert "-D" in plain_help
+    assert "--to-display" in plain_help
+    assert "-d" in plain_help
+    assert "--debug" in plain_help
 
     target = _make_target("Chrome")
     display = TargetInfo(
@@ -300,7 +315,7 @@ def test_cli_init_non_interactive_and_interactive(
     tmp_path: Path,
     restore_live_config: None,
 ) -> None:
-    monkeypatch.setenv("HOME", str(tmp_path))
+    _isolate_home(monkeypatch, tmp_path)
 
     # Non-interactive flags
     res = cli_runner.invoke(
@@ -337,14 +352,15 @@ def test_cli_init_non_interactive_and_interactive(
 
 
 def test_cli_doctor_runs_cleanly(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    monkeypatch.setenv("HOME", str(tmp_path))
-    res = cli_runner.invoke(app, ["doctor"])
+    _isolate_home(monkeypatch, tmp_path)
+    res = cli_runner.invoke(app, ["doctor"], env={"NO_COLOR": "1", "TERM": "dumb"})
     assert res.exit_code == 0, res.stdout
-    assert "Environment Doctor" in res.stdout
-    assert "Python" in res.stdout
-    assert "LLM API Config" in res.stdout
-    assert "WebUI Studio" in res.stdout
-    assert "Local Daemon" in res.stdout
+    plain_out = _strip_ansi(res.stdout)
+    assert "Environment Doctor" in plain_out
+    assert "Python" in plain_out
+    assert "LLM API Config" in plain_out
+    assert "WebUI Studio" in plain_out
+    assert "Local Daemon" in plain_out
 
 
 def test_daemon_info_lifecycle_and_pid_guard(tmp_path: Path) -> None:
@@ -431,7 +447,7 @@ def test_exported_python_workflow_has_pep723_and_valid_driver_import() -> None:
 def test_webui_precedence_and_install_marker(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    monkeypatch.setenv("HOME", str(tmp_path))
+    _isolate_home(monkeypatch, tmp_path)
     monkeypatch.delenv("AEF_WEBUI_DIR", raising=False)
 
     # 1. With no user dist, resolves to package-embedded webui_dist

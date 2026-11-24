@@ -135,6 +135,8 @@ def test_e2e_server_region_multitarget_at_point_thumbnail_and_config(
     snapshot = {f: getattr(cfg_mod.config, f) for f in AppConfig.model_fields}
     monkeypatch.setattr(cfg_mod, "get_global_env_file", lambda: env_file)
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
 
     fake_cap = _FakeOSCapturer(retina_scale=2)
     session_manager.clear()
