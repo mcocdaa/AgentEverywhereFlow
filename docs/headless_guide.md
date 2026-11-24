@@ -14,7 +14,7 @@ AEFlow 提供两套业界标准的系统级通用无头隔离方案：
 通过 Windows 系统的 Indirect Display Driver (IddCx) 规范，开辟一块物理人眼看不见的虚拟屏幕（如 `Display 2 (1920x1080)`）。
 - Windows 会将这块屏幕视为真实的硬件显示器，支持完整的 GPU 硬件加速与 DirectX 绘图；
 - 目标应用（如微信、浏览器）运行在虚拟屏幕空间内，可以在该空间内自由置顶、获取焦点、点击与敲字；
-- **您的物理主屏幕完全不显示任何弹出窗口，物理鼠标指针不受任何干扰**。
+- **视觉隔离与注意事项**：您的物理主屏幕完全不显示任何目标弹出窗口（避免遮挡日常工作界面）；但 Windows 同一桌面会话仍共享**全局鼠标指针、键盘焦点与系统剪贴板**。若需要 100% 零指针移动与零焦点抢占的纯后台操作，建议使用 **无头浏览器 CDP 模式**（针对 Chrome/Edge/Electron 页面）或下方的 **方案 C：Docker + Xvfb 无头容器**。
 
 ### 2. 1分钟安装虚拟显示器驱动
 推荐使用 GitHub 广泛采用的成熟开源项目 [Virtual-Display-Driver](https://github.com/itsmikethetech/Virtual-Display-Driver)：
@@ -32,8 +32,8 @@ aef list-targets
 # 2. 将微信一键搬移到虚拟屏幕（Display 2）
 aef move "微信" --to-display 2
 
-# 3. 或者直接在启动任务时自动移动并执行
-aef run "微信" --task "给文件传输助手发一条测试消息" --to-display 2
+# 3. 或者直接在启动任务时自动移动并执行（支持 -D 简写）
+aef run --target "微信" --task "给文件传输助手发一条测试消息" --to-display 2
 ```
 
 #### 通过 REST API 调度

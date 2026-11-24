@@ -46,17 +46,29 @@ Screen-cast style viewport isolation & CodeAct execution engine for embodied des
 ### 1. Install & Configure
 
 ```bash
-# Install globally as a CLI tool via uv
-uv tool install "git+https://github.com/mcocdaa/AgentEverywhereFlow.git"
+# Install globally as a CLI tool via uv (PyPI)
+uv tool install agenteverywhereflow
 
-# Or clone for local development (Linux / Windows)
-git clone https://github.com/mcocdaa/AgentEverywhereFlow.git && cd AgentEverywhereFlow
-uv sync --all-extras
+# Or run ephemerally without installing
+uvx agenteverywhereflow ui
 
-# Configure your VLM API key (persists to ~/.aef/.env; defaults to DeepSeek / OpenAI-compatible)
-aef config --set-key "sk-your-api-key"
-aef config --set-model "gpt-4o" --set-base "https://api.openai.com/v1"
+# Or add to an existing Python project
+uv add agenteverywhereflow
+
+# Bleeding-edge from GitHub main:
+# uv tool install "git+https://github.com/mcocdaa/AgentEverywhereFlow.git"
+
+# Ubuntu / Debian X11 system packages (for window listing, clipboard, and Tk fallback)
+sudo apt-get install -y wmctrl xclip python3-tk
+
+# Interactive provider setup wizard (OpenAI / DeepSeek / OpenRouter / Ollama / Custom -> ~/.aef/.env)
+aef init
+
+# Verify Python, OS display/input backend, API config, WebUI, and daemon readiness
+aef doctor
 ```
+
+> **Tip (Local Development):** `git clone https://github.com/mcocdaa/AgentEverywhereFlow.git && cd AgentEverywhereFlow && uv sync --extra dev`
 
 ### 2. Summon & Run
 
@@ -70,7 +82,7 @@ aef run --target "Chrome" --task "Select all cat tiles in the 9-grid CAPTCHA and
 # Multi-window interactive session with human-in-the-loop confirmation gate
 aef chat --target "Chrome,Excel" --permission manual
 
-# Replay an exported workflow with zero LLM token usage
+# Replay an exported workflow with zero LLM token usage (or `uv run workflow.py`)
 aef workflow play ~/.aef/workflows/sales_pipeline.yaml --speed 1.5
 ```
 
@@ -84,16 +96,17 @@ aef serve --host 127.0.0.1 --port 8000
 aef ui
 ```
 
-### 4. Python SDK
+### 4. Python SDK (3 Lines)
 
 ```python
-from agenteverywhereflow.agent.loop import AgentLoop
-from agenteverywhereflow.capturer import get_capturer
-from agenteverywhereflow.config import AppConfig, ExecutionMode
+import agenteverywhereflow as aef
 
-target = get_capturer().list_targets()[0]
-loop = AgentLoop(app_config=AppConfig(default_mode=ExecutionMode.MINIMAL_PYTHON))
-loop.run(target=target, user_task="Fill the form and click submit")
+# 1-liner: resolves target string ("Chrome", "display:1", HWND), reads env/~/.aef/.env, returns RunResult
+res = aef.run("Chrome", "Fill the form and click Submit")
+
+# Or bind a stateful Agent with explicit provider settings
+agent = aef.Agent("Chrome", model="gpt-4o", api_key="sk-...")
+res = agent.do("Open Settings and enable dark mode")
 ```
 
 ---

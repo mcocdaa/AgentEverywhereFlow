@@ -43,21 +43,15 @@
 git clone https://github.com/mcocdaa/AgentEverywhereFlow.git
 cd AgentEverywhereFlow
 
-# 2. 创建并激活虚拟环境 (推荐 Python 3.11+)
-uv venv
-source .venv/bin/activate  # Linux / macOS
-# 或在 Windows PowerShell:
-# .\.venv\Scripts\Activate.ps1
+# 2. 同步核心、平台特定（Win32 / Linux X11 / macOS PyObjC 自动按系统解析）与开发依赖
+uv sync --extra dev
 
-# 3. 安装开发与平台依赖
-# Linux 环境:
-uv pip install -e ".[dev,linux]"
+# 3. Ubuntu / Debian X11 环境建议安装系统辅助工具
+sudo apt-get install -y wmctrl xclip python3-tk xvfb
 
-# Windows 环境:
-uv pip install -e ".[dev,windows]"
-
-# 4. 配置本地环境变量
-cp .env.example .env
+# 4. 交互式初始化模型配置并自检环境（或 cp .env.example .env）
+uv run aef init
+uv run aef doctor
 ```
 
 ---

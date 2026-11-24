@@ -14,7 +14,7 @@ from rich.panel import Panel
 from agenteverywhereflow.agent.prompts import get_prompt_for_target
 from agenteverywhereflow.capturer import get_capturer
 from agenteverywhereflow.capturer.base import TargetInfo
-from agenteverywhereflow.config import AppConfig, ExecutionMode, config
+from agenteverywhereflow.config import AppConfig, ConfigurationError, ExecutionMode, config
 from agenteverywhereflow.engine import get_engine
 
 
@@ -71,34 +71,19 @@ class AgentLoop:
         self.capturer = get_capturer()
         self.console = Console()
         self._client: Any = None
+        self.last_steps: int = 0
+        self.last_message: str = ""
 
     @property
     def client(self) -> Any:
         """Lazily initialize OpenAI client on demand."""
         if self._client is None:
             if not self.config.api_key:
-                import typer
-                from rich.panel import Panel
-
-                self.console.print(
-                    Panel(
-                        "[bold red]❌ No API Key configured![/bold red]\n\n"
-                        "Please configure your API key using one of the following methods:\n\n"
-                        "[bold cyan]Method 1 (Command Line):[/bold cyan]\n"
-                        '  [yellow]aef config --set-key "sk-your-api-key"[/yellow]\n'
-                        '  [dim]Optionally set custom Base URL:[/dim] [yellow]aef config --set-base "https://api.openai.com/v1"[/yellow]\n\n'
-                        "[bold cyan]Method 2 (Global Config File):[/bold cyan]\n"
-                        "  Edit or create [yellow]~/.aef/.env[/yellow] and add:\n"
-                        "  [dim]AEF_API_KEY=sk-your-api-key[/dim]\n"
-                        "  [dim]AEF_BASE_URL=https://api.openai.com/v1[/dim]\n\n"
-                        "[bold cyan]Method 3 (Environment Variable):[/bold cyan]\n"
-                        '  PowerShell: [yellow]$env:AEF_API_KEY="sk-your-key"[/yellow] or [yellow]$env:OPENAI_API_KEY="sk-your-key"[/yellow]\n'
-                        '  Linux/macOS: [yellow]export AEF_API_KEY="sk-your-key"[/yellow]',
-                        title="🔑 LLM Authentication Required",
-                        border_style="red",
-                    )
+                raise ConfigurationError(
+                    "No LLM API key configured. Run `aef init` to set up a provider, "
+                    "set AEF_API_KEY (or OPENAI_API_KEY / DEEPSEEK_API_KEY / OPENROUTER_API_KEY), "
+                    "or pass `api_key=...` explicitly."
                 )
-                raise typer.Exit(1)
 
             from openai import OpenAI
 
@@ -164,6 +149,8 @@ class AgentLoop:
         max_steps: int | None = None,
     ) -> bool:
         """Execute the agent task loop bound to the specified target."""
+        self.last_steps = 0
+        self.last_message = ""
         mode = mode or self.config.default_mode
         max_steps = max_steps or self.config.max_steps
         engine = get_engine(mode)
@@ -196,6 +183,7 @@ class AgentLoop:
         step = 0
         while step < max_steps:
             step += 1
+            self.last_steps = step
             self.console.rule(f"[bold blue]Step {step} / {max_steps}[/bold blue]")
 
             if self.config.debug:
@@ -251,7 +239,10 @@ class AgentLoop:
             if self.planner_func:
                 try:
                     assistant_text = self.planner_func(messages, target, step)
+                except ConfigurationError:
+                    raise
                 except Exception as e:
+                    self.last_message = f"Planner Error: {e}"
                     self.console.print(f"[bold red]❌ Planner Error: {e}[/bold red]")
                     return False
             else:
@@ -275,7 +266,10 @@ class AgentLoop:
                         self.console.print(
                             f"[dim magenta]  [DEBUG] LLM Usage: {usage_text} | finish_reason={fin_reason}[/dim magenta]"
                         )
+                except ConfigurationError:
+                    raise
                 except Exception as e:
+                    self.last_message = f"LLM API Error: {e}"
                     self.console.print(f"[bold red]❌ LLM API Error: {e}[/bold red]")
                     if self.config.debug:
                         import traceback
@@ -341,6 +335,7 @@ class AgentLoop:
                     if payload:
                         if payload.get("action") == "finish":
                             msg = payload.get("message", "Task finished.")
+                            self.last_message = str(msg)
                             self.console.print(
                                 Panel(
                                     f"[bold green]🎉 Finished:[/bold green] {msg}",
@@ -390,9 +385,10 @@ class AgentLoop:
             if "TASK_COMPLETED" in assistant_text:
                 if not executed_action or action_success:
                     summary = assistant_text.split("TASK_COMPLETED")[-1].strip(": \n")
+                    self.last_message = summary or "Task completed successfully."
                     self.console.print(
                         Panel(
-                            f"[bold green]{summary or 'Task completed successfully.'}[/bold green]",
+                            f"[bold green]{self.last_message}[/bold green]",
                             title="🎉 Task Successfully Completed",
                             border_style="bold green",
                         )
@@ -419,5 +415,6 @@ class AgentLoop:
                     }
                 )
 
+        self.last_message = f"Reached maximum step limit ({max_steps})."
         self.console.print("[bold yellow]⚠️ Reached maximum step limit.[/bold yellow]")
         return False

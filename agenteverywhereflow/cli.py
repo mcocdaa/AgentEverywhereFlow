@@ -1,11 +1,21 @@
 """Command-line interface for AgentEverywhereFlow (AEFlow)."""
 
+import json
+import os
+from pathlib import Path
+from typing import Any
+
 import typer
 from rich.console import Console
 from rich.panel import Panel
 
 from agenteverywhereflow import __version__
-from agenteverywhereflow.config import ExecutionMode, PermissionMode
+from agenteverywhereflow.config import (
+    ConfigurationError,
+    ExecutionMode,
+    PermissionMode,
+    get_global_config_dir,
+)
 
 CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"]}
 
@@ -16,6 +26,83 @@ app = typer.Typer(
     context_settings=CONTEXT_SETTINGS,
 )
 console = Console()
+
+
+def get_daemon_info_file() -> Path:
+    """Resolve global ~/.aef/daemon.json discovery metadata path."""
+    return get_global_config_dir() / "daemon.json"
+
+
+def write_daemon_info(
+    host: str,
+    port: int,
+    *,
+    pid: int | None = None,
+    version: str | None = None,
+    path: Path | None = None,
+) -> Path:
+    """Persist running AEFlow daemon endpoint info to ~/.aef/daemon.json."""
+    info_path = path if path is not None else get_daemon_info_file()
+    info_path.parent.mkdir(parents=True, exist_ok=True)
+    connect_host = "127.0.0.1" if host in ("0.0.0.0", "", "::") else host
+    payload = {
+        "pid": os.getpid() if pid is None else pid,
+        "host": host,
+        "port": port,
+        "version": version or __version__,
+        "url": f"http://{connect_host}:{port}",
+    }
+    info_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    return info_path
+
+
+def read_daemon_info(path: Path | None = None) -> dict[str, Any] | None:
+    """Read ~/.aef/daemon.json metadata if present and valid."""
+    info_path = path if path is not None else get_daemon_info_file()
+    if not info_path.is_file():
+        return None
+    try:
+        data = json.loads(info_path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else None
+    except Exception:
+        return None
+
+
+def clear_daemon_info(
+    expected_pid: int | None = None,
+    path: Path | None = None,
+) -> bool:
+    """Remove ~/.aef/daemon.json if present (and owned by expected_pid when specified)."""
+    info_path = path if path is not None else get_daemon_info_file()
+    if not info_path.is_file():
+        return False
+    if expected_pid is not None:
+        existing = read_daemon_info(path=info_path)
+        if existing is not None and existing.get("pid") not in (None, expected_pid):
+            return False
+    try:
+        info_path.unlink()
+        return True
+    except OSError:
+        return False
+
+
+def _print_configuration_error(err: ConfigurationError) -> None:
+    """Render a friendly Rich guidance panel when LLM configuration is missing."""
+    console.print(
+        Panel(
+            f"[bold red]❌ {err}[/bold red]\n\n"
+            "[bold cyan]Recommended (Interactive Setup Wizard):[/bold cyan]\n"
+            "  [yellow]aef init[/yellow]\n\n"
+            "[bold cyan]Alternative (Direct CLI Flags):[/bold cyan]\n"
+            '  [yellow]aef config --set-key "sk-your-api-key" --set-base "https://api.openai.com/v1" --set-model "gpt-4o"[/yellow]\n\n'
+            "[bold cyan]Or via Environment Variable:[/bold cyan]\n"
+            "  [dim]OPENAI_API_KEY / DEEPSEEK_API_KEY / OPENROUTER_API_KEY / OLLAMA_HOST / AEF_API_KEY[/dim]\n\n"
+            "[dim]Tip: Run [bold cyan]aef doctor[/bold cyan] to verify your full setup.[/dim]",
+            title="🔑 LLM Configuration Required",
+            border_style="red",
+        )
+    )
 
 
 @app.command(name="version")
@@ -146,8 +233,47 @@ def update(
     # 2. Check if uv is available
     uv_path = shutil.which("uv")
     if uv_path:
-        console.print(f"[bold yellow]Updating via 'uv tool' to {target_ref} ...[/bold yellow]")
-        install_target = f"git+https://github.com/mcocdaa/AgentEverywhereFlow.git@{target_ref}"
+        edge_git_url = "git+https://github.com/mcocdaa/AgentEverywhereFlow.git"
+        git_install_target = edge_git_url if edge else f"{edge_git_url}@{target_ref}"
+
+        # For stable releases (non-edge, no custom channel), prefer `uv tool upgrade agenteverywhereflow`
+        if is_stable:
+            console.print(
+                "[bold yellow]Upgrading via 'uv tool upgrade agenteverywhereflow' ...[/bold yellow]"
+            )
+            try:
+                res_upg = subprocess.run(
+                    [uv_path, "tool", "upgrade", "agenteverywhereflow"],
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                )
+                if res_upg.returncode == 0:
+                    msg = res_upg.stdout.strip() or res_upg.stderr.strip()
+                    console.print(
+                        f"[bold green]✓ Successfully upgraded AgentEverywhereFlow via uv tool upgrade![/bold green]\n{msg}"
+                    )
+                    return
+                err_upg = res_upg.stderr.strip() or res_upg.stdout.strip()
+                if sys.platform == "win32" and (
+                    "os error 32" in err_upg or "进程无法访问" in err_upg
+                ):
+                    combined_upg = f"{res_upg.stdout}\n{res_upg.stderr}"
+                    if "Installed" in combined_upg or "+ agenteverywhereflow" in combined_upg:
+                        console.print(
+                            "[bold green]✓ Successfully upgraded AgentEverywhereFlow via uv tool upgrade![/bold green]\n"
+                            "[dim](Package libraries upgraded; active entrypoint shim preserved)[/dim]"
+                        )
+                        return
+                console.print(
+                    f"[dim]uv tool upgrade fallback ({err_upg or 'retrying via install'})...[/dim]"
+                )
+            except Exception as e:
+                console.print(f"[dim]uv tool upgrade error: {e}[/dim]")
+
+        install_target = git_install_target if (edge or channel) else "agenteverywhereflow"
+        console.print(f"[bold yellow]Installing via 'uv tool' ({install_target}) ...[/bold yellow]")
 
         # On Windows, ~/.local/bin/aef.exe is actively executing this process and locked by Windows kernel (os error 32).
         # Upgrading the uv tool's isolated Python environment directly via `uv pip install --python sys.executable`
@@ -204,31 +330,36 @@ def update(
                         )
                         return
 
-                console.print(f"[yellow]⚠️ uv tool install failed: {err_msg}[/yellow]")
-
-                # Try 'uv tool upgrade agenteverywhereflow' as an alternative
-                console.print("[dim]Attempting alternative 'uv tool upgrade' ...[/dim]")
-                res_upg = subprocess.run(
-                    [uv_path, "tool", "upgrade", "agenteverywhereflow"],
-                    capture_output=True,
-                    text=True,
-                    encoding="utf-8",
-                    errors="replace",
-                )
-                if res_upg.returncode == 0:
+                # If PyPI package install failed on stable channel, fall back to GitHub tag
+                if is_stable and install_target == "agenteverywhereflow":
                     console.print(
-                        f"[bold green]✓ Successfully upgraded to {target_ref} via uv tool upgrade![/bold green]"
+                        f"[dim]PyPI install unavailable ({err_msg}); falling back to {git_install_target} ...[/dim]"
                     )
-                    return
+                    res_git = subprocess.run(
+                        [uv_path, "tool", "install", "--force", "--reinstall", git_install_target],
+                        capture_output=True,
+                        text=True,
+                        encoding="utf-8",
+                        errors="replace",
+                    )
+                    if res_git.returncode == 0:
+                        msg = res_git.stdout.strip() or res_git.stderr.strip()
+                        console.print(
+                            f"[bold green]✓ Successfully updated to {target_ref} via GitHub uv tool install![/bold green]\n{msg}"
+                        )
+                        return
+                    err_msg = res_git.stderr.strip() or res_git.stdout.strip()
+
+                console.print(f"[yellow]⚠️ uv tool install failed: {err_msg}[/yellow]")
 
                 if sys.platform == "win32" and (
                     "os error 32" in err_msg or "进程无法访问" in err_msg
                 ):
                     console.print(
                         "[bold yellow]💡 Windows Tip: If running inside an active 'aef' process, run this in PowerShell after exiting:[/bold yellow]\n"
-                        f"   [bold cyan]uv tool install --force --reinstall {install_target}[/bold cyan]\n"
-                        "   [dim]or[/dim]\n"
-                        "   [bold cyan]uv tool upgrade agenteverywhereflow[/bold cyan]"
+                        "   [bold cyan]uv tool upgrade agenteverywhereflow[/bold cyan]\n"
+                        "   [dim]or for bleeding-edge:[/dim]\n"
+                        f"   [bold cyan]uv tool install --force --reinstall {edge_git_url}[/bold cyan]"
                     )
         except Exception as e:
             console.print(f"[dim]uv tool error: {e}[/dim]")
@@ -327,70 +458,375 @@ def manage_config(
     ),
 ) -> None:
     """View current configuration or persist global options in ~/.aef/.env."""
-    import agenteverywhereflow.config
-    from agenteverywhereflow.config import AppConfig, get_global_config_dir, get_global_env_file
+    from agenteverywhereflow.config import (
+        config as live_config,
+    )
+    from agenteverywhereflow.config import (
+        get_global_env_file,
+        get_masked_config,
+        update_env_config,
+    )
 
     env_file = get_global_env_file()
-    modified = False
-
-    # Read existing key-values from ~/.aef/.env if it exists
-    env_dict: dict[str, str] = {}
-    if env_file.exists():
-        try:
-            with open(env_file, encoding="utf-8") as f:
-                for line in f:
-                    line_strip = line.strip()
-                    if line_strip and not line_strip.startswith("#") and "=" in line_strip:
-                        k, v = line_strip.split("=", 1)
-                        env_dict[k.strip()] = v.strip().strip("'\"")
-        except Exception:
-            pass
-
+    updates: dict[str, Any] = {}
     if set_key is not None:
-        env_dict["AEF_API_KEY"] = set_key.strip()
-        modified = True
+        updates["api_key"] = set_key.strip()
     if set_base is not None:
-        env_dict["AEF_BASE_URL"] = set_base.strip()
-        modified = True
+        updates["base_url"] = set_base.strip()
     if set_model is not None:
-        env_dict["AEF_MODEL_NAME"] = set_model.strip()
-        modified = True
+        updates["model_name"] = set_model.strip()
 
-    if modified:
-        get_global_config_dir().mkdir(parents=True, exist_ok=True)
-        with open(env_file, "w", encoding="utf-8") as f:
-            for k, v in env_dict.items():
-                f.write(f"{k}={v}\n")
+    if updates:
+        update_env_config(updates, env_path=env_file)
         console.print(
             f"[bold green]✓ Successfully updated global configuration in {env_file}![/bold green]"
         )
-        # Reload config instance
-        agenteverywhereflow.config.config = AppConfig()
 
-    current_cfg = agenteverywhereflow.config.config
+    masked = get_masked_config(live_config)
     key_display = (
-        f"[green]{current_cfg.api_key[:6]}...{current_cfg.api_key[-4:]}[/green]"
-        if len(current_cfg.api_key) > 10
-        else (
-            "[green]Configured[/green]"
-            if current_cfg.api_key
-            else "[bold red]Not Configured (Missing)[/bold red]"
+        f"[green]{masked['api_key_preview']}[/green]"
+        if masked["api_key_set"]
+        else "[bold red]Not Configured (Missing — run 'aef init')[/bold red]"
+    )
+
+    env_overrides = [
+        name
+        for name in (
+            "AEF_API_KEY",
+            "AEF_BASE_URL",
+            "AEF_MODEL_NAME",
+            "OPENAI_API_KEY",
+            "DEEPSEEK_API_KEY",
+            "OPENROUTER_API_KEY",
+            "OLLAMA_HOST",
         )
+        if os.environ.get(name)
+    ]
+    override_note = (
+        f"\n[yellow]⚠️ Active shell env overrides:[/yellow] {', '.join(env_overrides)}"
+        if env_overrides
+        else ""
     )
 
     console.print(
         Panel(
-            f"[bold cyan]Model Name:[/bold cyan] {current_cfg.model_name}\n"
-            f"[bold cyan]Base URL:[/bold cyan] {current_cfg.base_url}\n"
+            f"[bold cyan]Model Name:[/bold cyan] {masked['model_name']}\n"
+            f"[bold cyan]Base URL:[/bold cyan] {masked['base_url']}\n"
             f"[bold cyan]API Key:[/bold cyan] {key_display}\n"
             f"[bold cyan]Global Config File:[/bold cyan] {env_file}\n"
-            f"[bold cyan]Screenshots Dir:[/bold cyan] {current_cfg.screenshot_dir}\n"
-            f"[bold cyan]Execution Mode:[/bold cyan] {current_cfg.default_mode}\n"
-            f"[bold cyan]Debug Mode:[/bold cyan] {current_cfg.debug}",
+            f"[bold cyan]Screenshots Dir:[/bold cyan] {live_config.screenshot_dir}\n"
+            f"[bold cyan]Execution Mode:[/bold cyan] {masked['default_mode']}\n"
+            f"[bold cyan]Permission Mode:[/bold cyan] {masked['default_permission']}\n"
+            f"[bold cyan]Debug Mode:[/bold cyan] {masked['debug']}"
+            f"{override_note}",
             title="⚙️ AgentEverywhereFlow Configuration",
             border_style="cyan",
         )
     )
+
+
+@app.command(name="init")
+def init_config(
+    provider: str | None = typer.Option(
+        None,
+        "--provider",
+        "-p",
+        help="Provider preset: openai, deepseek, openrouter, ollama, or custom",
+    ),
+    api_key: str | None = typer.Option(
+        None,
+        "--api-key",
+        "-k",
+        help="Provider API key (optional for local Ollama)",
+    ),
+    base_url: str | None = typer.Option(
+        None,
+        "--base-url",
+        "-b",
+        help="Custom OpenAI-compatible base URL",
+    ),
+    model: str | None = typer.Option(
+        None,
+        "--model",
+        "-m",
+        help="Vision-LLM model name",
+    ),
+) -> None:
+    """Interactive onboarding wizard to configure your LLM provider in ~/.aef/.env."""
+    from agenteverywhereflow.config import (
+        PROVIDER_PRESETS,
+        get_global_env_file,
+        get_masked_config,
+        update_env_config,
+    )
+
+    preset_order = ["openai", "deepseek", "openrouter", "ollama", "custom"]
+
+    console.print(
+        Panel(
+            "[bold cyan]Welcome to AgentEverywhereFlow (AEFlow) Setup![/bold cyan]\n"
+            "[dim]Choose a Vision-LLM provider preset to save credentials to ~/.aef/.env.[/dim]",
+            title="✨ AEFlow Quick Init",
+            border_style="magenta",
+        )
+    )
+
+    selected_key: str
+    if provider is not None:
+        normalized_provider = provider.strip().lower()
+        if normalized_provider not in PROVIDER_PRESETS:
+            console.print(
+                f"[bold red]❌ Unknown provider '{provider}'. "
+                f"Choose from: {', '.join(preset_order)}[/bold red]"
+            )
+            raise typer.Exit(1)
+        selected_key = normalized_provider
+    else:
+        for idx, key in enumerate(preset_order, 1):
+            preset = PROVIDER_PRESETS[key]
+            endpoint_hint = preset["base_url"] or "custom URL"
+            model_hint = preset["model_name"] or "custom model"
+            console.print(
+                f"  [bold cyan]{idx}.[/bold cyan] [bold]{preset['label']}[/bold] "
+                f"[dim]({endpoint_hint} · {model_hint})[/dim]"
+            )
+        raw_choice = typer.prompt("Select provider [1-5]", default="1").strip().lower()
+        if raw_choice.isdigit() and 1 <= int(raw_choice) <= len(preset_order):
+            selected_key = preset_order[int(raw_choice) - 1]
+        elif raw_choice in PROVIDER_PRESETS:
+            selected_key = raw_choice
+        else:
+            console.print(f"[bold red]❌ Invalid provider choice: '{raw_choice}'[/bold red]")
+            raise typer.Exit(1)
+
+    preset = PROVIDER_PRESETS[selected_key]
+
+    resolved_base_url = base_url
+    if resolved_base_url is None:
+        if selected_key == "custom":
+            resolved_base_url = typer.prompt(
+                "Enter Base URL (OpenAI-compatible)",
+                default="https://api.openai.com/v1",
+            ).strip()
+        elif selected_key == "ollama":
+            resolved_base_url = typer.prompt(
+                "Enter Ollama Base URL",
+                default=preset["base_url"],
+            ).strip()
+        else:
+            resolved_base_url = preset["base_url"]
+
+    resolved_api_key = api_key
+    if resolved_api_key is None:
+        if selected_key == "ollama":
+            resolved_api_key = "ollama"
+        else:
+            resolved_api_key = typer.prompt(
+                f"Enter {preset['label']} API Key",
+                hide_input=True,
+            ).strip()
+
+    resolved_model = model
+    if resolved_model is None:
+        default_model = preset["model_name"] or "gpt-4o"
+        resolved_model = typer.prompt(
+            "Enter Vision-LLM model name",
+            default=default_model,
+        ).strip()
+
+    env_file = get_global_env_file()
+    updated_cfg = update_env_config(
+        {
+            "api_key": resolved_api_key,
+            "base_url": resolved_base_url,
+            "model_name": resolved_model,
+        },
+        env_path=env_file,
+    )
+    masked = get_masked_config(updated_cfg)
+
+    console.print(
+        Panel(
+            f"[bold green]✓ Configuration saved to {env_file}[/bold green]\n\n"
+            f"[bold cyan]Provider:[/bold cyan]  {preset['label']}\n"
+            f"[bold cyan]Base URL:[/bold cyan]  {masked['base_url']}\n"
+            f"[bold cyan]Model:[/bold cyan]     {masked['model_name']}\n"
+            f"[bold cyan]API Key:[/bold cyan]   {masked['api_key_preview'] or 'Not Set'}\n\n"
+            "[dim]Next steps:[/dim]\n"
+            "  • [cyan]aef doctor[/cyan]   — Verify OS capture, input, and API readiness\n"
+            "  • [cyan]aef ui[/cyan]       — Launch the browser WebUI Studio\n"
+            "  • [cyan]aef summon[/cyan]   — Pick a window/screen and run an autonomous task",
+            title="🚀 AEFlow Ready",
+            border_style="green",
+        )
+    )
+
+
+@app.command(name="doctor")
+def doctor() -> None:
+    """Run environment diagnostics (Python, OS backend, API config, WebUI, daemon)."""
+    import importlib.util
+    import platform
+    import shutil
+    import sys
+
+    from rich.table import Table
+
+    from agenteverywhereflow.config import config as live_config
+    from agenteverywhereflow.config import get_global_env_file, get_masked_config
+    from agenteverywhereflow.server.webui import get_webui_status
+
+    table = Table(title="🩺 AgentEverywhereFlow Environment Doctor", show_lines=True)
+    table.add_column("Check", style="bold cyan", no_wrap=True)
+    table.add_column("Status", justify="center", no_wrap=True)
+    table.add_column("Details", style="white")
+
+    # 1. Python version
+    py_ver = platform.python_version()
+    py_ok = sys.version_info >= (3, 11)
+    table.add_row(
+        "Python",
+        "[bold green]PASS[/bold green]" if py_ok else "[bold red]FAIL[/bold red]",
+        f"{py_ver} ({'meets >=3.11' if py_ok else 'requires Python 3.11+'})",
+    )
+
+    # 2. Operating System
+    os_label = f"{platform.system()} {platform.release()} ({platform.machine()})"
+    table.add_row("OS", "[bold green]INFO[/bold green]", os_label)
+
+    # 3. Platform Display / Capture / Input Backend
+    if sys.platform.startswith("linux"):
+        session_type = (os.environ.get("XDG_SESSION_TYPE") or "").strip().lower()
+        has_wayland = bool(os.environ.get("WAYLAND_DISPLAY")) or session_type == "wayland"
+        has_display = bool(os.environ.get("DISPLAY"))
+        has_wmctrl = bool(shutil.which("wmctrl"))
+        has_clip = bool(shutil.which("xclip") or shutil.which("xsel"))
+        has_xlib = importlib.util.find_spec("Xlib") is not None
+
+        if has_wayland and not has_display:
+            disp_status = "[bold yellow]WARN[/bold yellow]"
+            disp_detail = (
+                "Wayland session detected without X11 DISPLAY. "
+                "Switch to Xorg or run inside Docker + Xvfb (`docker compose up -d`)."
+            )
+        elif has_wayland:
+            disp_status = "[bold yellow]WARN[/bold yellow]"
+            disp_detail = (
+                f"Wayland session (XWayland DISPLAY={os.environ.get('DISPLAY')}). "
+                "Native X11 window listing/input works best under an Xorg session or Xvfb."
+            )
+        elif has_display:
+            disp_status = "[bold green]PASS[/bold green]"
+            disp_detail = f"X11 active (DISPLAY={os.environ.get('DISPLAY')})"
+        else:
+            disp_status = "[bold yellow]WARN[/bold yellow]"
+            disp_detail = "No DISPLAY env var detected (headless shell). Use `xvfb-run -a ...` for headless X11."
+        table.add_row("Linux Display", disp_status, disp_detail)
+
+        missing_tools: list[str] = []
+        if not has_wmctrl:
+            missing_tools.append("wmctrl")
+        if not has_clip:
+            missing_tools.append("xclip")
+        tools_ok = has_wmctrl and has_clip and has_xlib
+        tools_detail = (
+            f"wmctrl={'ok' if has_wmctrl else 'missing'}, "
+            f"xclip/xsel={'ok' if has_clip else 'missing'}, "
+            f"python-xlib={'ok' if has_xlib else 'missing'}"
+        )
+        if missing_tools:
+            tools_detail += (
+                f" — install via: sudo apt-get install -y {' '.join(missing_tools)} python3-tk"
+            )
+        table.add_row(
+            "Linux X11 Tools",
+            "[bold green]PASS[/bold green]" if tools_ok else "[bold yellow]WARN[/bold yellow]",
+            tools_detail,
+        )
+    elif sys.platform == "darwin":
+        has_quartz = importlib.util.find_spec("Quartz") is not None
+        has_appkit = importlib.util.find_spec("AppKit") is not None
+        mac_ok = has_quartz and has_appkit
+        mac_detail = (
+            f"Quartz={'ok' if has_quartz else 'missing'}, AppKit={'ok' if has_appkit else 'missing'}. "
+            "Grant Screen Recording & Accessibility permissions in "
+            "System Settings → Privacy & Security."
+        )
+        table.add_row(
+            "macOS Quartz / TCC",
+            "[bold green]PASS[/bold green]" if mac_ok else "[bold yellow]WARN[/bold yellow]",
+            mac_detail,
+        )
+    elif sys.platform == "win32":
+        has_win32 = importlib.util.find_spec("win32gui") is not None
+        table.add_row(
+            "Windows Win32",
+            "[bold green]PASS[/bold green]" if has_win32 else "[bold yellow]WARN[/bold yellow]",
+            "pywin32 available" if has_win32 else "pywin32 missing — reinstall agenteverywhereflow",
+        )
+
+    # 4. LLM API Configuration
+    masked = get_masked_config(live_config)
+    api_ok = bool(masked["api_key_set"])
+    api_details = (
+        f"model={masked['model_name']}, base_url={masked['base_url']}, "
+        f"key={masked['api_key_preview']} (config: {get_global_env_file()})"
+        if api_ok
+        else f"API key missing (model={masked['model_name']}, base_url={masked['base_url']}). Run `aef init`."
+    )
+    table.add_row(
+        "LLM API Config",
+        "[bold green]PASS[/bold green]" if api_ok else "[bold yellow]WARN[/bold yellow]",
+        api_details,
+    )
+
+    # 5. WebUI Studio Assets
+    ui_st = get_webui_status()
+    ui_ok = bool(ui_st.get("installed"))
+    ui_source = ui_st.get("source") or ("embedded" if ui_st.get("is_embedded") else "user")
+    ui_details = (
+        f"source={ui_source}, assets={ui_st.get('asset_count', 0)}, path={ui_st.get('path')}"
+        if ui_ok
+        else "Not installed — run `aef ui install`"
+    )
+    table.add_row(
+        "WebUI Studio",
+        "[bold green]PASS[/bold green]" if ui_ok else "[bold yellow]WARN[/bold yellow]",
+        ui_details,
+    )
+
+    # 6. Daemon Status (~/.aef/daemon.json)
+    daemon = read_daemon_info()
+    if daemon:
+        pid = daemon.get("pid")
+        alive = False
+        if isinstance(pid, int):
+            try:
+                import psutil
+
+                alive = psutil.pid_exists(pid)
+            except Exception:
+                alive = False
+        if alive:
+            table.add_row(
+                "Local Daemon",
+                "[bold green]RUNNING[/bold green]",
+                f"{daemon.get('url')} (PID {pid}, v{daemon.get('version', '?')})",
+            )
+        else:
+            table.add_row(
+                "Local Daemon",
+                "[bold yellow]STALE[/bold yellow]",
+                f"Stale daemon.json found for PID {pid} ({daemon.get('url')}). Restart with `aef serve`.",
+            )
+    else:
+        table.add_row(
+            "Local Daemon",
+            "[dim]STOPPED[/dim]",
+            "Not running (start with `aef serve` or `aef ui`).",
+        )
+
+    console.print(table)
 
 
 @app.command(name="list-targets")
@@ -491,7 +927,11 @@ def summon(
             raise typer.Exit(0)
 
     loop = AgentLoop()
-    loop.run(target=target, user_task=task, mode=mode)
+    try:
+        loop.run(target=target, user_task=task, mode=mode)
+    except ConfigurationError as err:
+        _print_configuration_error(err)
+        raise typer.Exit(1) from None
 
 
 @app.command(name="run")
@@ -509,7 +949,7 @@ def run(
     to_display: str | None = typer.Option(
         None,
         "--to-display",
-        "-d",
+        "-D",
         help="Optionally relocate the target window to a specific display (e.g. '2' or 'display:2') before running",
     ),
     debug: bool = typer.Option(
@@ -569,7 +1009,11 @@ def run(
         )
 
     loop = AgentLoop()
-    loop.run(target=selected, user_task=task, mode=mode)
+    try:
+        loop.run(target=selected, user_task=task, mode=mode)
+    except ConfigurationError as err:
+        _print_configuration_error(err)
+        raise typer.Exit(1) from None
 
 
 @app.command(name="chat")
@@ -1112,8 +1556,18 @@ def chat(
             continue
 
         # Regular user instruction: execute turn
+        if not session.config.api_key and not session.planner_func:
+            _print_configuration_error(
+                ConfigurationError("No LLM API key configured for chat session.")
+            )
+            continue
+
         console.rule(f"[bold blue]Turn {session.turn_count + 1}[/bold blue]")
-        turn_res = session.execute_turn(user_input, max_steps=max_steps)
+        try:
+            turn_res = session.execute_turn(user_input, max_steps=max_steps)
+        except ConfigurationError as err:
+            _print_configuration_error(err)
+            continue
         if not turn_res.success and turn_res.error:
             console.print(f"[bold red]Turn failed: {turn_res.error}[/bold red]")
         elif not turn_res.completed:
@@ -1239,10 +1693,13 @@ def serve(
 
         threading.Thread(target=_open, daemon=True).start()
 
-    import os
+    import atexit
     import signal
 
+    current_pid = os.getpid()
+
     def _sigint_handler(signum: int, frame: object) -> None:
+        clear_daemon_info(expected_pid=current_pid)
         console.print("\n[dim]Server stopped by user (Ctrl+C).[/dim]")
         os._exit(0)
 
@@ -1250,6 +1707,9 @@ def serve(
         signal.signal(signal.SIGINT, _sigint_handler)
     except Exception:
         pass
+
+    write_daemon_info(bind_host, bind_port, pid=current_pid)
+    atexit.register(clear_daemon_info, current_pid)
 
     try:
         uvicorn.run(
@@ -1261,6 +1721,7 @@ def serve(
             timeout_graceful_shutdown=2,
         )
     except (KeyboardInterrupt, SystemExit):
+        clear_daemon_info(expected_pid=current_pid)
         os._exit(0)
     except OSError as e:
         if "10048" in str(e) or "already in use" in str(e).lower():
@@ -1270,6 +1731,8 @@ def serve(
             )
             raise typer.Exit(code=1) from None
         raise
+    finally:
+        clear_daemon_info(expected_pid=current_pid)
 
 
 # ---------------------------------------------------------------------------
@@ -1366,10 +1829,13 @@ def _run_ui_server(
         )
     )
 
-    import os
+    import atexit
     import signal
 
+    current_pid = os.getpid()
+
     def _sigint_handler(signum: int, frame: object) -> None:
+        clear_daemon_info(expected_pid=current_pid)
         console.print("\n[dim]WebUI Studio stopped by user (Ctrl+C).[/dim]")
         os._exit(0)
 
@@ -1377,6 +1843,9 @@ def _run_ui_server(
         signal.signal(signal.SIGINT, _sigint_handler)
     except Exception:
         pass
+
+    write_daemon_info(bind_host, target_port, pid=current_pid)
+    atexit.register(clear_daemon_info, current_pid)
 
     try:
         uvicorn.run(
@@ -1387,6 +1856,7 @@ def _run_ui_server(
             timeout_graceful_shutdown=2,
         )
     except (KeyboardInterrupt, SystemExit):
+        clear_daemon_info(expected_pid=current_pid)
         os._exit(0)
     except OSError as e:
         if "10048" in str(e) or "already in use" in str(e).lower():
@@ -1396,6 +1866,8 @@ def _run_ui_server(
             )
             raise typer.Exit(code=1) from None
         raise
+    finally:
+        clear_daemon_info(expected_pid=current_pid)
 
 
 @ui_app.callback(invoke_without_command=True)

@@ -46,17 +46,29 @@
 ### 1. 安装与配置
 
 ```bash
-# 通过 uv 全局安装 CLI 工具
-uv tool install "git+https://github.com/mcocdaa/AgentEverywhereFlow.git"
+# 通过 uv 从 PyPI 全局安装 CLI 工具
+uv tool install agenteverywhereflow
 
-# 或克隆仓库进行本地开发（支持 Linux / Windows）
-git clone https://github.com/mcocdaa/AgentEverywhereFlow.git && cd AgentEverywhereFlow
-uv sync --all-extras
+# 或免安装直接运行 WebUI Studio
+uvx agenteverywhereflow ui
 
-# 一键配置多模态模型 API Key（自动持久化至 ~/.aef/.env，默认兼容 DeepSeek / OpenAI 接口）
-aef config --set-key "sk-your-api-key"
-aef config --set-model "gpt-4o" --set-base "https://api.openai.com/v1"
+# 或添加到现有 Python 项目依赖
+uv add agenteverywhereflow
+
+# 安装最新 main 分支开发版：
+# uv tool install "git+https://github.com/mcocdaa/AgentEverywhereFlow.git"
+
+# Ubuntu / Debian X11 系统依赖（用于窗口枚举、剪贴板输入与 Tk 兼容）
+sudo apt-get install -y wmctrl xclip python3-tk
+
+# 交互式初始化向导（支持 OpenAI / DeepSeek / OpenRouter / Ollama / 自定义 -> 自动保存至 ~/.aef/.env）
+aef init
+
+# 一键环境与配置自检（检查 Python、显示/输入后端、API 配置、WebUI 与守护进程状态）
+aef doctor
 ```
+
+> **本地源码开发**：`git clone https://github.com/mcocdaa/AgentEverywhereFlow.git && cd AgentEverywhereFlow && uv sync --extra dev`
 
 ### 2. 召唤与执行
 
@@ -70,7 +82,7 @@ aef run --target "Chrome" --task "在当前九宫格人机验证中找出所有�
 # 跨窗口连续多轮对话，并开启人工安全审批门禁
 aef chat --target "Chrome,Excel" --permission manual
 
-# 零 Token、零大模型调用的确定性高速重放录制工作流
+# 零 Token、零大模型调用的确定性高速重放录制工作流（导出的 .py 脚本支持直接 `uv run workflow.py`）
 aef workflow play ~/.aef/workflows/sales_pipeline.yaml --speed 1.5
 ```
 
@@ -84,16 +96,17 @@ aef serve --host 127.0.0.1 --port 8000
 aef ui
 ```
 
-### 4. Python SDK 调用
+### 4. Python SDK 调用（3 行上手）
 
 ```python
-from agenteverywhereflow.agent.loop import AgentLoop
-from agenteverywhereflow.capturer import get_capturer
-from agenteverywhereflow.config import AppConfig, ExecutionMode
+import agenteverywhereflow as aef
 
-target = get_capturer().list_targets()[0]
-loop = AgentLoop(app_config=AppConfig(default_mode=ExecutionMode.MINIMAL_PYTHON))
-loop.run(target=target, user_task="录入表单数据并点击提交按钮")
+# 一行调用：自动解析窗口/屏幕目标并读取环境变量或 ~/.aef/.env，返回结构化 RunResult
+res = aef.run("Chrome", "录入表单数据并点击提交按钮")
+
+# 或实例化有状态 Agent 复用配置与多轮会话
+agent = aef.Agent("Chrome", model="gpt-4o", api_key="sk-...")
+res = agent.do("打开设置页面并切换深色模式")
 ```
 
 ---
