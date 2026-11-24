@@ -354,6 +354,129 @@ def _parse_region_target_id(target_id: str) -> TargetInfo | None:
     )
 
 
+def _resolve_request_targets(
+    *,
+    target_id: str | None,
+    target_ids: list[str] | None,
+    region: "RegionSpec | None",
+    cdp_ws_url: str | None,
+    cdp_endpoint: str,
+    title: str | None,
+    capturer: Any,
+    fallback_targets: list[TargetInfo] | None = None,
+) -> tuple[list[TargetInfo], CDPActionBackend | None, list[TargetInfo]]:
+    """Resolve CDP, custom region, multi-target, or single OS targets for session bind/rebind.
+
+    Returns:
+        ``(resolved_targets, cdp_backend, all_os_targets)``
+    """
+    resolved_targets: list[TargetInfo] = []
+    cdp_backend: CDPActionBackend | None = None
+    all_os_targets: list[TargetInfo] = []
+
+    # 1. Headless CDP target via explicit cdp_ws_url or 'cdp:*' target_id
+    is_cdp_request = bool(cdp_ws_url) or (
+        bool(target_id) and str(target_id).strip().lower().startswith("cdp:")
+    )
+    if is_cdp_request:
+        ws_url = (cdp_ws_url or "").strip()
+        cdp_info = None
+        if not ws_url and target_id and target_id.strip().lower().startswith("cdp:"):
+            cdp_info = resolve_cdp_target(target_id, endpoint=cdp_endpoint)
+            if cdp_info is not None:
+                ws_url = cdp_info.ws_url
+        if not ws_url:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"No CDP page target matching '{target_id}' found at {cdp_endpoint}.",
+            )
+        if cdp_info is None:
+            raw_id = (
+                target_id[4:]
+                if target_id and target_id.lower().startswith("cdp:")
+                else ws_url.rstrip("/").split("/")[-1]
+            )
+            cdp_target = TargetInfo(
+                target_id=f"cdp:{raw_id}",
+                target_type=TargetType.WINDOW,
+                title=title or f"CDP Page ({raw_id})",
+                process_name="cdp",
+                rect=Rect(x=0, y=0, width=1280, height=800),
+                native_handle=0,
+            )
+        else:
+            cdp_target = cdp_info.to_target_info()
+            if title:
+                cdp_target.title = title
+        cdp_backend = CDPActionBackend(ws_url=ws_url, target_info=cdp_info)
+        resolved_targets.append(cdp_target)
+        return resolved_targets, cdp_backend, all_os_targets
+
+    # 2. Custom screen crop region target
+    if region is not None:
+        r = region
+        region_id = f"region:{r.x},{r.y},{r.width},{r.height}"
+        region_title = r.title or title or f"Region ({r.width}x{r.height} at {r.x},{r.y})"
+        region_target = TargetInfo(
+            target_id=region_id,
+            target_type=TargetType.REGION,
+            title=region_title,
+            process_name="region",
+            rect=Rect(x=r.x, y=r.y, width=r.width, height=r.height),
+            native_handle=0,
+        )
+        resolved_targets.append(region_target)
+        return resolved_targets, None, all_os_targets
+
+    # 3. Multi-target OS resolution (target_ids) or single target_id
+    queries: list[str] = []
+    if target_id:
+        queries.append(target_id)
+    if target_ids:
+        for q in target_ids:
+            if q and q not in queries:
+                queries.append(q)
+
+    if not queries:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="One of 'target_id', 'target_ids', 'region', or 'cdp_ws_url' must be provided.",
+        )
+
+    fetched_os = False
+    seen_ids: set[str] = set()
+    for q in queries:
+        q_clean = q.strip()
+        if q_clean.lower().startswith("region:"):
+            reg_t = _parse_region_target_id(q_clean)
+            if reg_t is None:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Invalid region target query '{q}'.",
+                )
+            if title and len(queries) == 1:
+                reg_t.title = title
+            matched = reg_t
+        else:
+            if not fetched_os:
+                all_os_targets = capturer.list_targets()
+                fetched_os = True
+            matched_opt = resolve_target(all_os_targets, q_clean)
+            if matched_opt is None and fallback_targets:
+                matched_opt = resolve_target(fallback_targets, q_clean)
+            if matched_opt is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"No window or screen matching query '{q}' found.",
+                )
+            matched = matched_opt
+        if matched.target_id not in seen_ids:
+            resolved_targets.append(matched)
+            seen_ids.add(matched.target_id)
+
+    return resolved_targets, None, all_os_targets
+
+
 # Request & Response Schemas
 class RegionSpec(BaseModel):
     """Custom rectangular screen region specification."""
@@ -467,7 +590,33 @@ class UpdatePermissionRequest(BaseModel):
 
 
 class SwitchTargetRequest(BaseModel):
-    target_id: str = Field(description="New target identifier to bind session to")
+    """Payload for rebinding a session's active viewport(s) while preserving context."""
+
+    target_id: str | None = Field(
+        default=None,
+        description="Target ID, native handle, table index, 'cdp:<id>', 'region:x,y,w,h', or process/title query",
+    )
+    target_ids: list[str] | None = Field(
+        default=None,
+        description="Optional list of multiple target IDs/queries to bind into the session",
+    )
+    region: RegionSpec | None = Field(
+        default=None,
+        description="Optional custom screen crop region target ({x, y, width, height, title?})",
+    )
+    cdp_ws_url: str | None = Field(
+        default=None,
+        description="Optional Chrome DevTools Protocol WebSocket URL for headless browser control",
+    )
+    cdp_endpoint: str = Field(
+        default="http://127.0.0.1:9222",
+        description="CDP discovery HTTP endpoint used when resolving 'cdp:*' target_id",
+    )
+    title: str | None = Field(default=None, description="Optional custom target title override")
+    replace_targets: bool = Field(
+        default=True,
+        description="Whether to replace the session's bound target pool instead of keeping stale targets",
+    )
 
 
 class RunWorkflowRequest(BaseModel):
@@ -745,6 +894,20 @@ def create_app() -> FastAPI:
                     if r.x <= x < r.x + r.width and r.y <= y < r.y + r.height:
                         found = d
                         break
+        elif found is None:
+            try:
+                display_candidates = capturer.list_targets(
+                    include_displays=True, include_windows=False
+                )
+            except Exception:
+                display_candidates = []
+            for d in display_candidates:
+                if getattr(d, "target_type", None) != TargetType.DISPLAY:
+                    continue
+                r = d.rect
+                if r.x <= x < r.x + r.width and r.y <= y < r.y + r.height:
+                    found = d
+                    break
 
         return {"target": _serialize_target(found) if found is not None else None}
 
@@ -888,105 +1051,28 @@ def create_app() -> FastAPI:
     def create_session(req: CreateSessionRequest) -> dict[str, Any]:
         """Create and bind a new conversational dialogue session (OS window/display, multi-target, region, or CDP)."""
         capturer = get_capturer()
-        resolved_targets: list[TargetInfo] = []
-        cdp_backend: CDPActionBackend | None = None
-
-        # 1. Headless CDP target via explicit cdp_ws_url or 'cdp:*' target_id
-        is_cdp_request = bool(req.cdp_ws_url) or (
-            bool(req.target_id) and str(req.target_id).strip().lower().startswith("cdp:")
+        resolved_targets, cdp_backend, all_targets = _resolve_request_targets(
+            target_id=req.target_id,
+            target_ids=req.target_ids,
+            region=req.region,
+            cdp_ws_url=req.cdp_ws_url,
+            cdp_endpoint=req.cdp_endpoint,
+            title=req.title,
+            capturer=capturer,
         )
-        if is_cdp_request:
-            ws_url = (req.cdp_ws_url or "").strip()
-            cdp_info = None
-            if req.target_id and req.target_id.strip().lower().startswith("cdp:"):
-                cdp_info = resolve_cdp_target(req.target_id, endpoint=req.cdp_endpoint)
-                if not ws_url and cdp_info is not None:
-                    ws_url = cdp_info.ws_url
-            if not ws_url:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"No CDP page target matching '{req.target_id}' found at {req.cdp_endpoint}.",
-                )
-            if cdp_info is None:
-                raw_id = (
-                    req.target_id[4:]
-                    if req.target_id and req.target_id.lower().startswith("cdp:")
-                    else ws_url.rstrip("/").split("/")[-1]
-                )
-                cdp_target = TargetInfo(
-                    target_id=f"cdp:{raw_id}",
-                    target_type=TargetType.WINDOW,
-                    title=req.title or f"CDP Page ({raw_id})",
-                    process_name="cdp",
-                    rect=Rect(x=0, y=0, width=1280, height=800),
-                    native_handle=0,
-                )
-            else:
-                cdp_target = cdp_info.to_target_info()
-                if req.title:
-                    cdp_target.title = req.title
-            cdp_backend = CDPActionBackend(ws_url=ws_url, target_info=cdp_info)
-            resolved_targets.append(cdp_target)
 
-        # 2. Custom screen crop region target
-        elif req.region is not None:
-            r = req.region
-            region_id = f"region:{r.x},{r.y},{r.width},{r.height}"
-            region_title = r.title or f"Region ({r.width}x{r.height} at {r.x},{r.y})"
-            region_target = TargetInfo(
-                target_id=region_id,
-                target_type=TargetType.REGION,
-                title=region_title,
-                process_name="region",
-                rect=Rect(x=r.x, y=r.y, width=r.width, height=r.height),
-                native_handle=0,
-            )
-            resolved_targets.append(region_target)
-
-        # 3. Multi-target OS resolution (target_ids) or single target_id
-        else:
-            queries: list[str] = []
-            if req.target_id:
-                queries.append(req.target_id)
-            if req.target_ids:
-                for q in req.target_ids:
-                    if q and q not in queries:
-                        queries.append(q)
-
-            if not queries:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="One of 'target_id', 'target_ids', 'region', or 'cdp_ws_url' must be provided.",
-                )
-
-            all_targets = capturer.list_targets()
-            seen_ids: set[str] = set()
-            for q in queries:
-                if q.lower().startswith("region:"):
-                    reg_t = _parse_region_target_id(q)
-                    if reg_t is None:
-                        raise HTTPException(
-                            status_code=status.HTTP_400_BAD_REQUEST,
-                            detail=f"Invalid region target query '{q}'.",
-                        )
-                    matched = reg_t
-                else:
-                    matched_opt = resolve_target(all_targets, q)
-                    if matched_opt is None:
-                        raise HTTPException(
-                            status_code=status.HTTP_404_NOT_FOUND,
-                            detail=f"No window or screen matching query '{q}' found.",
-                        )
-                    matched = matched_opt
-                if matched.target_id not in seen_ids:
-                    resolved_targets.append(matched)
-                    seen_ids.add(matched.target_id)
-
-            # Relocate primary window target to specified display if requested
-            if req.move_to_display and resolved_targets[0].target_type == TargetType.WINDOW:
-                disp = resolve_display(all_targets, req.move_to_display)
-                if disp:
-                    capturer.move_window_to_display(resolved_targets[0], disp)
+        # Relocate primary window target to specified display if requested
+        if (
+            cdp_backend is None
+            and req.region is None
+            and req.move_to_display
+            and resolved_targets[0].target_type == TargetType.WINDOW
+        ):
+            if not all_targets:
+                all_targets = capturer.list_targets()
+            disp = resolve_display(all_targets, req.move_to_display)
+            if disp:
+                capturer.move_window_to_display(resolved_targets[0], disp)
 
         primary_target = resolved_targets[0]
         session = session_manager.create_session(
@@ -1230,35 +1316,54 @@ def create_app() -> FastAPI:
 
     @app.post("/api/v1/sessions/{session_id}/target")
     def switch_target(session_id: str, req: SwitchTargetRequest) -> dict[str, Any]:
-        """Switch target window, screen, or region for this session."""
+        """Rebind a session to new window(s), display, region, or CDP tab while preserving context."""
         session = _resolve_session(session_id)
         if not session:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
 
-        new_target: TargetInfo | None = None
+        capturer = get_capturer()
         bound_targets: list[TargetInfo] = list(getattr(session, "targets", []))
-        if bound_targets:
-            new_target = resolve_target(bound_targets, req.target_id)
-        if new_target is None and req.target_id.strip().lower().startswith("region:"):
-            new_target = _parse_region_target_id(req.target_id.strip())
-        if new_target is None:
-            capturer = get_capturer()
-            all_targets = capturer.list_targets()
-            new_target = resolve_target(all_targets, req.target_id)
-        if not new_target:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Target query '{req.target_id}' could not be resolved.",
-            )
+        resolved_targets, cdp_backend, _ = _resolve_request_targets(
+            target_id=req.target_id,
+            target_ids=req.target_ids,
+            region=req.region,
+            cdp_ws_url=req.cdp_ws_url,
+            cdp_endpoint=req.cdp_endpoint,
+            title=req.title,
+            capturer=capturer,
+            fallback_targets=bound_targets,
+        )
 
-        session.switch_target(new_target)
+        session.rebind_targets(
+            resolved_targets,
+            replace_pool=req.replace_targets,
+            cdp_backend=cdp_backend,
+        )
+
+        active_backend = "cdp" if getattr(session, "cdp_backend", None) is not None else "os"
+        serialized_target = _serialize_target(session.target)
+        serialized_targets = [_serialize_target(t) for t in session.targets]
+        event_bus.publish(
+            "session_target_switched",
+            session_id=session.session_id,
+            payload={
+                "session_id": session.session_id,
+                "target_id": session.target.target_id,
+                "title": session.target.title,
+                "target": serialized_target,
+                "targets": serialized_targets,
+                "backend": active_backend,
+                "context_preserved": True,
+                "turn_count": session.turn_count,
+            },
+        )
         return {
             "status": "ok",
-            "target": {
-                "target_id": new_target.target_id,
-                "target_type": new_target.target_type.value,
-                "title": new_target.title,
-            },
+            "context_preserved": True,
+            "turn_count": session.turn_count,
+            "backend": active_backend,
+            "target": serialized_target,
+            "targets": serialized_targets,
         }
 
     @app.post("/api/v1/sessions/{session_id}/reset")

@@ -30,6 +30,15 @@ _SYSTEM_OVERLAY_OWNERS = frozenset(
     }
 )
 
+_AEFLOW_OVERLAY_OWNERS = frozenset({"AEFlow Desktop"})
+_AEFLOW_OVERLAY_TITLES = frozenset(
+    {
+        "AEFlow Target Picker",
+        "AEFlow Target Border",
+        "AEFlow Status Pill",
+    }
+)
+
 
 def _get_quartz() -> Any | None:
     """Lazily import Quartz framework (pyobjc-framework-Quartz)."""
@@ -608,14 +617,24 @@ class MacCapturer(BaseCapturer):
         return False
 
     def target_at_point(self, x: int, y: int, exclude_pid: int | None = None) -> TargetInfo | None:
-        """Return the topmost visible window at screen point ``(x, y)`` using Quartz z-order.
+        """Return the topmost visible window or display at screen point ``(x, y)`` using Quartz z-order.
 
         ``CGWindowListCopyWindowInfo`` already returns windows in front-to-back order.
+        Excludes ``exclude_pid`` and AEFlow Desktop overlay windows (defense-in-depth on macOS
+        where WKWebView helper PIDs can differ from the parent app PID), falling back to the
+        first display containing ``(x, y)`` when no application window matches.
         """
         for win in self._list_windows():
             if exclude_pid is not None and win.pid and win.pid == exclude_pid:
                 continue
+            if win.process_name in _AEFLOW_OVERLAY_OWNERS or win.title in _AEFLOW_OVERLAY_TITLES:
+                continue
             r = win.rect
             if r.x <= x < r.x + r.width and r.y <= y < r.y + r.height:
                 return win
+
+        for disp in self._list_displays():
+            r = disp.rect
+            if r.x <= x < r.x + r.width and r.y <= y < r.y + r.height:
+                return disp
         return None

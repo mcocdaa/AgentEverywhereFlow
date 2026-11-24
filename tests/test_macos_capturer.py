@@ -336,3 +336,89 @@ def test_base_capturer_capture_thumbnail_preserves_aspect_ratio() -> None:
     assert jpeg_bytes[:2] == b"\xff\xd8"  # JPEG magic header
     thumb = Image.open(io.BytesIO(jpeg_bytes))
     assert thumb.size == (360, 225)
+
+
+def test_mac_capturer_target_at_point_excludes_aeflow_overlays_and_falls_back_to_display() -> None:
+    """Verify MacCapturer.target_at_point skips AEFlow Desktop overlays and falls back to Display."""
+    fake_quartz = _make_fake_quartz()
+    fake_quartz.CGWindowListCopyWindowInfo = MagicMock(
+        return_value=[
+            # Owned by AEFlow Desktop (e.g. different helper PID not matching exclude_pid)
+            {
+                "kCGWindowLayer": 0,
+                "kCGWindowAlpha": 1.0,
+                "kCGWindowIsOnscreen": True,
+                "kCGWindowNumber": 801,
+                "kCGWindowOwnerName": "AEFlow Desktop",
+                "kCGWindowName": "Main Overlay",
+                "kCGWindowOwnerPID": 5001,
+                "kCGWindowBounds": {"X": 0, "Y": 0, "Width": 1728, "Height": 1117},
+            },
+            # WKWebView helper window titled AEFlow Target Picker
+            {
+                "kCGWindowLayer": 0,
+                "kCGWindowAlpha": 1.0,
+                "kCGWindowIsOnscreen": True,
+                "kCGWindowNumber": 802,
+                "kCGWindowOwnerName": "WebKit Helper",
+                "kCGWindowName": "AEFlow Target Picker",
+                "kCGWindowOwnerPID": 5002,
+                "kCGWindowBounds": {"X": 0, "Y": 0, "Width": 1728, "Height": 1117},
+            },
+            # Target border & status pill overlays
+            {
+                "kCGWindowLayer": 0,
+                "kCGWindowAlpha": 1.0,
+                "kCGWindowIsOnscreen": True,
+                "kCGWindowNumber": 803,
+                "kCGWindowOwnerName": "WebKit Helper",
+                "kCGWindowName": "AEFlow Target Border",
+                "kCGWindowOwnerPID": 5003,
+                "kCGWindowBounds": {"X": 100, "Y": 80, "Width": 1200, "Height": 800},
+            },
+            {
+                "kCGWindowLayer": 0,
+                "kCGWindowAlpha": 1.0,
+                "kCGWindowIsOnscreen": True,
+                "kCGWindowNumber": 804,
+                "kCGWindowOwnerName": "WebKit Helper",
+                "kCGWindowName": "AEFlow Status Pill",
+                "kCGWindowOwnerPID": 5004,
+                "kCGWindowBounds": {"X": 600, "Y": 10, "Width": 400, "Height": 80},
+            },
+            # Real underlying application window (Chrome)
+            {
+                "kCGWindowLayer": 0,
+                "kCGWindowAlpha": 1.0,
+                "kCGWindowIsOnscreen": True,
+                "kCGWindowNumber": 1001,
+                "kCGWindowOwnerName": "Google Chrome",
+                "kCGWindowName": "Docs - Chrome",
+                "kCGWindowOwnerPID": 4201,
+                "kCGWindowBounds": {"X": 100, "Y": 80, "Width": 1200, "Height": 800},
+            },
+        ]
+    )
+
+    capturer = MacCapturer()
+    with patch("agenteverywhereflow.capturer.macos._get_quartz", return_value=fake_quartz):
+        # Inside Chrome bounds: skips all AEFlow overlays even without exclude_pid
+        hit_win = capturer.target_at_point(250, 250)
+        assert hit_win is not None
+        assert hit_win.target_id == "macwin:1001"
+        assert hit_win.target_type == TargetType.WINDOW
+
+        # Empty desktop area on primary display (0..1728, 0..1117): falls back to display:1
+        hit_disp1 = capturer.target_at_point(10, 10)
+        assert hit_disp1 is not None
+        assert hit_disp1.target_id == "display:1"
+        assert hit_disp1.target_type == TargetType.DISPLAY
+
+        # Empty desktop area on secondary display (1728..4288, 0..1440): falls back to display:2
+        hit_disp2 = capturer.target_at_point(2000, 300)
+        assert hit_disp2 is not None
+        assert hit_disp2.target_id == "display:2"
+        assert hit_disp2.target_type == TargetType.DISPLAY
+
+        # Outside all windows and displays -> None
+        assert capturer.target_at_point(9999, 9999) is None

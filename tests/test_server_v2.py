@@ -628,3 +628,213 @@ def test_config_delegates_to_pkg_sdk_helpers_when_present(
         assert called_updates == [{"model_name": "gpt-4o-mini"}]
     finally:
         cfg_mod.config.model_name = orig_model
+
+
+def test_switch_target_preserves_context_across_window_display_region_and_cdp() -> None:
+    """Verify POST /api/v1/sessions/{id}/target rebinds cleanly across all target types without losing context."""
+    app = create_app()
+    client = TestClient(app)
+    session_manager.clear()
+
+    targets = _make_targets()
+    mock_capturer = MagicMock()
+    mock_capturer.list_targets.return_value = targets
+
+    seen_planner_messages: list[list[dict[str, Any]]] = []
+    captured_target_ids: list[str] = []
+
+    def _mock_planner(messages: list[dict[str, Any]], tgt: TargetInfo, step: int) -> str:
+        seen_planner_messages.append(list(messages))
+        return f"Observed {tgt.title}.\n```python\nwait(0.01)\n```\nTASK_COMPLETED: Done on {tgt.target_id}."
+
+    def _capture_side_effect(tgt: TargetInfo) -> Image.Image:
+        captured_target_ids.append(tgt.target_id)
+        return Image.new(
+            "RGB", (max(1, min(tgt.rect.width, 200)), max(1, min(tgt.rect.height, 120))), "white"
+        )
+
+    with patch("agenteverywhereflow.server.app.get_capturer", return_value=mock_capturer):
+        # Create initial session bound to hwnd:101
+        r_create = client.post(
+            "/api/v1/sessions",
+            json={"target_id": "hwnd:101", "session_id": "ctx-switch-1", "mode": "minimal"},
+        )
+        assert r_create.status_code == 201
+
+        sess = session_manager.get_session("ctx-switch-1")
+        assert sess is not None
+        sess.planner_func = _mock_planner
+        sess.capturer = MagicMock()
+        sess.capturer.capture.side_effect = _capture_side_effect
+        sess.capturer.focus = MagicMock(return_value=True)
+
+        # Turn 1 on hwnd:101
+        res1 = sess.execute_turn("Remember secret token ALPHA-42 from Chrome")
+        assert res1.success is True
+        assert sess.turn_count == 1
+        assert sess.total_steps == 1
+        assert len(sess.recorded_steps) == 1
+        events_before = len(sess.events)
+        assert captured_target_ids == ["hwnd:101"]
+
+        with client.websocket_connect("/api/v1/events") as ws:
+            # 1. Cross-window switch (hwnd:101 -> hwnd:202), replacing stale pool
+            r_win = client.post(
+                "/api/v1/sessions/ctx-switch-1/target",
+                json={"target_id": "hwnd:202"},
+            )
+            assert r_win.status_code == 200
+            d_win = r_win.json()
+            assert d_win["status"] == "ok"
+            assert d_win["context_preserved"] is True
+            assert d_win["turn_count"] == 1
+            assert d_win["backend"] == "os"
+            assert d_win["target"]["target_id"] == "hwnd:202"
+            assert [t["target_id"] for t in d_win["targets"]] == ["hwnd:202"]
+
+            ev_sw = ws.receive_json()
+            assert ev_sw["event_type"] == "session_target_switched"
+            assert ev_sw["session_id"] == "ctx-switch-1"
+            assert ev_sw["payload"]["target_id"] == "hwnd:202"
+            assert ev_sw["payload"]["context_preserved"] is True
+
+            # Verify conversation context untouched & transition marker appended
+            assert sess.turn_count == 1
+            assert sess.total_steps == 1
+            assert len(sess.recorded_steps) == 1
+            assert len(sess.events) == events_before
+            assert any("ALPHA-42" in str(m.get("content", "")) for m in sess.messages)
+            assert "VS Code" in str(sess.messages[0]["content"])
+            assert "Previous conversation context is preserved." in str(
+                sess.messages[-1]["content"]
+            )
+
+            # Verify persistence on disk after rebind
+            restored = ChatSession.restore("ctx-switch-1")
+            assert restored is not None
+            assert restored.target.target_id == "hwnd:202"
+            assert [t.target_id for t in restored.targets] == ["hwnd:202"]
+            assert restored.turn_count == 1
+            assert any("ALPHA-42" in str(m.get("content", "")) for m in restored.messages)
+
+            # 2. Switch to multi-target pool (display:1 + hwnd:202)
+            r_multi = client.post(
+                "/api/v1/sessions/ctx-switch-1/target",
+                json={"target_ids": ["display:1", "hwnd:202"], "replace_targets": True},
+            )
+            assert r_multi.status_code == 200
+            d_multi = r_multi.json()
+            assert d_multi["target"]["target_id"] == "display:1"
+            assert [t["target_id"] for t in d_multi["targets"]] == ["display:1", "hwnd:202"]
+            assert ws.receive_json()["event_type"] == "session_target_switched"
+
+            # 3. Switch to custom screen crop Region
+            r_reg = client.post(
+                "/api/v1/sessions/ctx-switch-1/target",
+                json={
+                    "target_id": "region:40,60,500,320",
+                    "region": {
+                        "x": 40,
+                        "y": 60,
+                        "width": 500,
+                        "height": 320,
+                        "title": "Metrics Panel",
+                    },
+                    "replace_targets": True,
+                },
+            )
+            assert r_reg.status_code == 200
+            d_reg = r_reg.json()
+            assert d_reg["backend"] == "os"
+            assert d_reg["target"]["target_id"] == "region:40,60,500,320"
+            assert d_reg["target"]["target_type"] == "region"
+            assert d_reg["target"]["title"] == "Metrics Panel"
+            assert d_reg["target"]["rect"] == {"x": 40, "y": 60, "width": 500, "height": 320}
+            assert len(d_reg["targets"]) == 1
+            assert ws.receive_json()["event_type"] == "session_target_switched"
+
+            # 4. Switch to headless CDP browser tab
+            r_cdp = client.post(
+                "/api/v1/sessions/ctx-switch-1/target",
+                json={
+                    "target_id": "cdp:TAB77",
+                    "cdp_ws_url": "ws://127.0.0.1:9222/devtools/page/TAB77",
+                    "title": "Docs Tab",
+                    "replace_targets": True,
+                },
+            )
+            assert r_cdp.status_code == 200
+            d_cdp = r_cdp.json()
+            assert d_cdp["backend"] == "cdp"
+            assert d_cdp["target"]["target_id"] == "cdp:TAB77"
+            assert d_cdp["target"]["title"] == "Docs Tab"
+            assert sess.cdp_backend is not None
+            assert sess.cdp_backend.ws_url == "ws://127.0.0.1:9222/devtools/page/TAB77"
+            assert ws.receive_json()["event_type"] == "session_target_switched"
+
+            old_cdp_backend = sess.cdp_backend
+            close_spy = MagicMock()
+            old_cdp_backend.close = close_spy
+
+            # 5. Switch from CDP back to OS Display -> closes & clears old CDP backend
+            r_disp = client.post(
+                "/api/v1/sessions/ctx-switch-1/target",
+                json={"target_id": "display:1", "replace_targets": True},
+            )
+            assert r_disp.status_code == 200
+            d_disp = r_disp.json()
+            assert d_disp["backend"] == "os"
+            assert d_disp["target"]["target_id"] == "display:1"
+            assert [t["target_id"] for t in d_disp["targets"]] == ["display:1"]
+            assert d_disp["turn_count"] == 1
+            close_spy.assert_called_once()
+            assert sess.cdp_backend is None
+            assert sess._cdp_backends == {}
+            assert ws.receive_json()["event_type"] == "session_target_switched"
+
+        # Turn 2 captures ONLY display:1 (not stale hwnd:101/hwnd:202) and keeps Turn 1 memory
+        captured_target_ids.clear()
+        res2 = sess.execute_turn("Report token from earlier turn on Display 1")
+        assert res2.success is True
+        assert sess.turn_count == 2
+        assert captured_target_ids == ["display:1"]
+        assert any("ALPHA-42" in str(m.get("content", "")) for m in seen_planner_messages[-1])
+
+        # Missing target spec returns 400
+        r_bad = client.post("/api/v1/sessions/ctx-switch-1/target", json={})
+        assert r_bad.status_code == 400
+
+        # Nonexistent session returns 404
+        r_missing = client.post(
+            "/api/v1/sessions/does-not-exist/target",
+            json={"target_id": "display:1"},
+        )
+        assert r_missing.status_code == 404
+
+    session_manager.clear()
+
+
+def test_target_at_point_falls_back_to_display_when_native_returns_none() -> None:
+    """Verify GET /api/v1/targets/at-point returns the containing display when native hit-test returns None."""
+    app = create_app()
+    client = TestClient(app)
+    targets = _make_targets()
+
+    mock_native = MagicMock()
+    mock_native.target_at_point.return_value = None
+    mock_native.list_targets.return_value = targets
+
+    with patch("agenteverywhereflow.server.app.get_capturer", return_value=mock_native):
+        # Empty desktop area inside display:1 (0..1920, 0..1080) -> returns display:1
+        r_disp = client.get("/api/v1/targets/at-point?x=20&y=30&exclude_pid=9999")
+        assert r_disp.status_code == 200
+        body = r_disp.json()
+        assert body["target"] is not None
+        assert body["target"]["target_id"] == "display:1"
+        assert body["target"]["target_type"] == "display"
+        mock_native.target_at_point.assert_called_once_with(20, 30, exclude_pid=9999)
+
+        # Outside all displays -> returns None
+        r_out = client.get("/api/v1/targets/at-point?x=5000&y=5000")
+        assert r_out.status_code == 200
+        assert r_out.json() == {"target": None}

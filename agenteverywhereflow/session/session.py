@@ -771,10 +771,142 @@ class ChatSession:
         self._init_system_prompt()
         return True
 
-    def switch_target(self, target_or_query: TargetInfo | str) -> TargetInfo:
+    def _close_cdp_backends(self, *, exclude: Any | None = None) -> None:
+        """Close tracked CDP backends cleanly, ignoring shutdown errors."""
+        seen_ids: set[int] = set()
+        candidates: list[Any] = list(self._cdp_backends.values())
+        if self.cdp_backend is not None:
+            candidates.append(self.cdp_backend)
+        for backend in candidates:
+            if backend is None or backend is exclude:
+                continue
+            bid = id(backend)
+            if bid in seen_ids:
+                continue
+            seen_ids.add(bid)
+            close_fn = getattr(backend, "close", None)
+            if callable(close_fn):
+                try:
+                    close_fn()
+                except Exception:
+                    pass
+
+    def rebind_targets(
+        self,
+        new_targets: list[TargetInfo],
+        active_target: TargetInfo | None = None,
+        *,
+        replace_pool: bool = True,
+        cdp_backend: Any | None = None,
+    ) -> TargetInfo:
+        """Rebind the session to new target(s) while preserving full conversation context.
+
+        Preserves ``messages``, ``events``, ``recorded_steps``, ``turn_count``, and
+        ``total_steps`` so the operator can seamlessly move the same agent across
+        displays, windows, custom regions, or headless CDP browser tabs.
+
+        Args:
+            new_targets: Non-empty list of target descriptors to bind.
+            active_target: Optional active target override (defaults to ``new_targets[0]``).
+            replace_pool: If True, replaces ``self.targets`` with ``new_targets`` so stale
+                switched-away targets are no longer captured. If False, merges into the pool.
+            cdp_backend: Optional headless CDP backend for the new active target. Passing
+                ``None`` when switching to OS targets cleanly closes and clears prior CDP backends.
+
+        Returns:
+            The newly active :class:`TargetInfo`.
+        """
+        if not new_targets:
+            raise ValueError("new_targets must contain at least one TargetInfo.")
+
+        deduped: list[TargetInfo] = []
+        seen_ids: set[str] = set()
+        for tgt in new_targets:
+            if tgt.target_id not in seen_ids:
+                deduped.append(tgt)
+                seen_ids.add(tgt.target_id)
+
+        chosen = active_target or deduped[0]
+
+        if replace_pool:
+            self.targets = list(deduped)
+            if not any(t.target_id == chosen.target_id for t in self.targets):
+                self.targets.insert(0, chosen)
+        else:
+            for tgt in deduped:
+                replaced = False
+                for idx, existing in enumerate(self.targets):
+                    if existing.target_id == tgt.target_id:
+                        self.targets[idx] = tgt
+                        replaced = True
+                        break
+                if not replaced:
+                    self.targets.append(tgt)
+            if not any(t.target_id == chosen.target_id for t in self.targets):
+                self.targets.append(chosen)
+
+        self.target = chosen
+
+        if cdp_backend is not None:
+            if replace_pool:
+                self._close_cdp_backends(exclude=cdp_backend)
+                self._cdp_backends.clear()
+            else:
+                prev = self._cdp_backends.get(self.target.target_id)
+                if prev is not None and prev is not cdp_backend:
+                    close_fn = getattr(prev, "close", None)
+                    if callable(close_fn):
+                        try:
+                            close_fn()
+                        except Exception:
+                            pass
+            self._cdp_backends[self.target.target_id] = cdp_backend
+            self.cdp_backend = cdp_backend
+        elif replace_pool or self.target.target_id not in self._cdp_backends:
+            self._close_cdp_backends()
+            self.cdp_backend = None
+            self._cdp_backends.clear()
+        else:
+            self.cdp_backend = self._cdp_backends[self.target.target_id]
+
+        self._init_system_prompt()
+        target_type_val = (
+            self.target.target_type.value
+            if hasattr(self.target.target_type, "value")
+            else str(self.target.target_type)
+        )
+        self.messages.append(
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": (
+                            f"[Target Switch] Active viewport switched to '{self.target.title}' "
+                            f"(type={target_type_val}, id={self.target.target_id}, "
+                            f"{self.target.rect.width}x{self.target.rect.height}). "
+                            "Previous conversation context is preserved."
+                        ),
+                    }
+                ],
+            }
+        )
+        self.save()
+        return self.target
+
+    def switch_target(
+        self,
+        target_or_query: TargetInfo | str,
+        *,
+        replace_pool: bool = False,
+    ) -> TargetInfo:
         """Dynamically switch current active target window or display."""
         if isinstance(target_or_query, TargetInfo):
             new_target: TargetInfo = target_or_query
+            if replace_pool:
+                return self.rebind_targets(
+                    [new_target], active_target=new_target, replace_pool=True
+                )
             if not any(t.target_id == new_target.target_id for t in self.targets):
                 self.targets.append(new_target)
         else:
@@ -798,11 +930,16 @@ class ChatSession:
                         or query in (t.process_name or "").lower()
                     ):
                         found_target = t
-                        self.targets.append(t)
+                        if not replace_pool:
+                            self.targets.append(t)
                         break
             if not found_target:
                 return self.target
             new_target = found_target
+            if replace_pool:
+                return self.rebind_targets(
+                    [new_target], active_target=new_target, replace_pool=True
+                )
 
         self.target = new_target
         self._init_system_prompt()
