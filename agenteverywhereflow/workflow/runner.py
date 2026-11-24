@@ -10,7 +10,7 @@ from rich.console import Console
 from agenteverywhereflow.actions.coords import CoordinateProjector
 from agenteverywhereflow.actions.driver import driver
 from agenteverywhereflow.capturer import get_capturer
-from agenteverywhereflow.capturer.base import TargetInfo
+from agenteverywhereflow.capturer.base import TargetInfo, TargetType
 from agenteverywhereflow.workflow.models import WorkflowDefinition, WorkflowStep
 
 
@@ -123,6 +123,20 @@ class WorkflowRunner:
                     continue
 
                 # Execute Action
+                def _window_handle_for(tgt: TargetInfo) -> int:
+                    return tgt.native_handle if tgt.target_type == TargetType.WINDOW else 0
+
+                def _resolve_image_size(tgt: TargetInfo, wf_step: WorkflowStep) -> tuple[int, int]:
+                    p_w = wf_step.params.get("img_width")
+                    p_h = wf_step.params.get("img_height")
+                    if p_w is not None and p_h is not None and int(p_w) > 0 and int(p_h) > 0:
+                        return int(p_w), int(p_h)
+                    if tgt.last_capture_size is not None:
+                        w, h = tgt.last_capture_size
+                        if w > 0 and h > 0:
+                            return w, h
+                    return tgt.rect.width, tgt.rect.height
+
                 if step.action == "switch_target":
                     if active_target:
                         self.capturer.focus(active_target)
@@ -141,21 +155,22 @@ class WorkflowRunner:
                         button = "right"
                         clicks = 1
 
+                    img_w, img_h = _resolve_image_size(active_target, step)
                     sx, sy = CoordinateProjector.to_screen_coords(
                         target=active_target,
                         x=x,
                         y=y,
-                        img_width=active_target.rect.width,
-                        img_height=active_target.rect.height,
+                        img_width=img_w,
+                        img_height=img_h,
                     )
                     driver.click(
                         x=sx,
                         y=sy,
                         button=button,  # type: ignore
                         clicks=clicks,
-                        window_handle=active_target.native_handle,
-                        window_rel_x=int(x),
-                        window_rel_y=int(y),
+                        window_handle=_window_handle_for(active_target),
+                        window_rel_x=sx - active_target.rect.x,
+                        window_rel_y=sy - active_target.rect.y,
                     )
                     time.sleep(0.3 * delay_scale)
 
@@ -163,21 +178,21 @@ class WorkflowRunner:
                     if not active_target:
                         raise RuntimeError("No active target window bound for type action.")
                     text = str(step.params.get("text", ""))
-                    driver.type_text(text, window_handle=active_target.native_handle)
+                    driver.type_text(text, window_handle=_window_handle_for(active_target))
                     time.sleep(0.3 * delay_scale)
 
                 elif step.action == "press":
                     if not active_target:
                         raise RuntimeError("No active target window bound for press action.")
                     key = str(step.params.get("key", ""))
-                    driver.press_key(key, window_handle=active_target.native_handle)
+                    driver.press_key(key, window_handle=_window_handle_for(active_target))
                     time.sleep(0.2 * delay_scale)
 
                 elif step.action == "hotkey":
                     if not active_target:
                         raise RuntimeError("No active target window bound for hotkey action.")
                     keys = step.params.get("keys", [])
-                    driver.hotkey(*keys, window_handle=active_target.native_handle)
+                    driver.hotkey(*keys, window_handle=_window_handle_for(active_target))
                     time.sleep(0.3 * delay_scale)
 
                 elif step.action == "scroll":
@@ -185,12 +200,13 @@ class WorkflowRunner:
                     x_raw = step.params.get("x")
                     y_raw = step.params.get("y")
                     if x_raw is not None and y_raw is not None and active_target:
+                        img_w, img_h = _resolve_image_size(active_target, step)
                         sx, sy = CoordinateProjector.to_screen_coords(
                             target=active_target,
                             x=float(x_raw),
                             y=float(y_raw),
-                            img_width=active_target.rect.width,
-                            img_height=active_target.rect.height,
+                            img_width=img_w,
+                            img_height=img_h,
                         )
                         driver.scroll(amount, x=sx, y=sy)
                     else:

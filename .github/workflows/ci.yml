@@ -31,11 +31,8 @@ jobs:
       - name: Set up Python 3.12
         run: uv python install 3.12
 
-      - name: Create virtualenv
-        run: uv venv
-
       - name: Install dependencies
-        run: uv pip install -e ".[dev,linux]"
+        run: uv sync --extra dev --python 3.12
 
       - name: Run ruff linter
         run: uv run ruff check .
@@ -74,16 +71,13 @@ jobs:
       - name: Set up Python ${{ matrix.python-version }}
         run: uv python install ${{ matrix.python-version }}
 
-      - name: Create virtualenv
-        run: uv venv
-
       - name: Install system dependencies for headless X11 testing
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb python3-tk
+          sudo apt-get install -y xvfb python3-tk wmctrl xclip
 
       - name: Install package with test dependencies
-        run: uv pip install -e ".[dev,linux]"
+        run: uv sync --extra dev --python ${{ matrix.python-version }}
 
       - name: Run unit tests with pytest
         run: |
@@ -105,11 +99,30 @@ jobs:
       - name: Set up Python 3.12
         run: uv python install 3.12
 
-      - name: Create virtualenv
-        run: uv venv
+      - name: Install package with test dependencies
+        run: uv sync --extra dev --python 3.12
 
-      - name: Install package with windows dependencies
-        run: uv pip install -e ".[dev,windows]"
+      - name: Run unit tests with pytest
+        run: uv run pytest tests/ -v
+
+  test-macos:
+    name: Test macOS (Python 3.12)
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Set up Python 3.12
+        run: uv python install 3.12
+
+      - name: Install package with test dependencies
+        run: uv sync --extra dev --python 3.12
 
       - name: Run unit tests with pytest
         run: uv run pytest tests/ -v

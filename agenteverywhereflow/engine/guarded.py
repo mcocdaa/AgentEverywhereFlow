@@ -9,7 +9,7 @@ from rich.prompt import Confirm
 from agenteverywhereflow.actions.coords import CoordinateProjector
 from agenteverywhereflow.actions.driver import driver
 from agenteverywhereflow.capturer import get_capturer
-from agenteverywhereflow.capturer.base import TargetInfo
+from agenteverywhereflow.capturer.base import TargetInfo, TargetType
 from agenteverywhereflow.config import config
 from agenteverywhereflow.engine.base import BaseExecutionEngine, ExecutionResult
 
@@ -75,6 +75,32 @@ class GuardedActionEngine(BaseExecutionEngine):
                     output="Action rejected by operator.",
                 )
 
+        def _window_handle_for(tgt: TargetInfo) -> int:
+            return tgt.native_handle if tgt.target_type == TargetType.WINDOW else 0
+
+        def _resolve_image_size(tgt: TargetInfo) -> tuple[int, int]:
+            image_sizes = kwargs.get("image_sizes") or {}
+            if tgt.target_id in image_sizes:
+                w, h = image_sizes[tgt.target_id]
+                if w > 0 and h > 0:
+                    return int(w), int(h)
+            explicit_size = kwargs.get("img_size") or kwargs.get("image_size")
+            if (
+                explicit_size is None
+                and kwargs.get("img_width") is not None
+                and kwargs.get("img_height") is not None
+            ):
+                explicit_size = (int(kwargs["img_width"]), int(kwargs["img_height"]))
+            if explicit_size is not None and tgt.target_id == target.target_id:
+                w, h = int(explicit_size[0]), int(explicit_size[1])
+                if w > 0 and h > 0:
+                    return w, h
+            if tgt.last_capture_size is not None:
+                w, h = tgt.last_capture_size
+                if w > 0 and h > 0:
+                    return w, h
+            return tgt.rect.width, tgt.rect.height
+
         # 3. Dispatch Action
         try:
             if action in ("switch_target", "switch_to"):
@@ -95,12 +121,13 @@ class GuardedActionEngine(BaseExecutionEngine):
                 y = float(payload.get("y", 0))
                 button = payload.get("button", "left")
                 clicks = int(payload.get("clicks", 1))
+                img_w, img_h = _resolve_image_size(act_target)
                 sx, sy = CoordinateProjector.to_screen_coords(
                     act_target,
                     x,
                     y,
-                    img_width=act_target.rect.width,
-                    img_height=act_target.rect.height,
+                    img_width=img_w,
+                    img_height=img_h,
                 )
                 self._print_action(
                     f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]click[/bold cyan](x={int(x)}, y={int(y)}) "
@@ -111,21 +138,22 @@ class GuardedActionEngine(BaseExecutionEngine):
                     y=sy,
                     button=button,  # type: ignore
                     clicks=clicks,
-                    window_handle=act_target.native_handle,
-                    window_rel_x=int(x),
-                    window_rel_y=int(y),
+                    window_handle=_window_handle_for(act_target),
+                    window_rel_x=sx - act_target.rect.x,
+                    window_rel_y=sy - act_target.rect.y,
                 )
                 return ExecutionResult(success=True, output=f"Clicked at ({sx}, {sy})")
 
             elif action == "move":
                 x = float(payload.get("x", 0))
                 y = float(payload.get("y", 0))
+                img_w, img_h = _resolve_image_size(act_target)
                 sx, sy = CoordinateProjector.to_screen_coords(
                     act_target,
                     x,
                     y,
-                    img_width=act_target.rect.width,
-                    img_height=act_target.rect.height,
+                    img_width=img_w,
+                    img_height=img_h,
                 )
                 self._print_action(
                     f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]move[/bold cyan](x={int(x)}, y={int(y)}) "
@@ -137,16 +165,17 @@ class GuardedActionEngine(BaseExecutionEngine):
             elif action == "type":
                 self.capturer.focus(act_target)
                 text = str(payload.get("text", ""))
-                method_desc = (
-                    "Clipboard Injection (Ctrl+V)"
-                    if (any(ord(c) > 127 for c in text) or sys.platform == "win32")
-                    else "Keyboard Emulation"
-                )
+                if sys.platform == "darwin":
+                    method_desc = "Clipboard Injection (Cmd+V)"
+                elif any(ord(c) > 127 for c in text) or sys.platform == "win32":
+                    method_desc = "Clipboard Injection (Ctrl+V)"
+                else:
+                    method_desc = "Keyboard Emulation"
                 self._print_action(
                     f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]type_text[/bold cyan]({repr(text)}) "
                     f"[dim]──▶ Method: {method_desc} [window='{act_target.title}'][/dim]"
                 )
-                driver.type_text(text, window_handle=act_target.native_handle)
+                driver.type_text(text, window_handle=_window_handle_for(act_target))
                 return ExecutionResult(success=True, output=f"Typed text: {text}")
 
             elif action == "press":
@@ -155,7 +184,7 @@ class GuardedActionEngine(BaseExecutionEngine):
                 self._print_action(
                     f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]press[/bold cyan]({repr(key)}) [dim][window='{act_target.title}'][/dim]"
                 )
-                driver.press_key(key, window_handle=act_target.native_handle)
+                driver.press_key(key, window_handle=_window_handle_for(act_target))
                 return ExecutionResult(success=True, output=f"Pressed key: {key}")
 
             elif action == "hotkey":
@@ -164,7 +193,7 @@ class GuardedActionEngine(BaseExecutionEngine):
                 self._print_action(
                     f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]hotkey[/bold cyan]({', '.join(repr(k) for k in keys)}) [dim][window='{act_target.title}'][/dim]"
                 )
-                driver.hotkey(*keys, window_handle=act_target.native_handle)
+                driver.hotkey(*keys, window_handle=_window_handle_for(act_target))
                 return ExecutionResult(success=True, output=f"Sent hotkey: {keys}")
 
             elif action == "scroll":
@@ -177,12 +206,13 @@ class GuardedActionEngine(BaseExecutionEngine):
                     f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]scroll[/bold cyan](amount={amount}{pos_info}) [dim][window='{act_target.title}'][/dim]"
                 )
                 if gx is not None and gy is not None:
+                    img_w, img_h = _resolve_image_size(act_target)
                     sx, sy = CoordinateProjector.to_screen_coords(
                         act_target,
                         float(gx),
                         float(gy),
-                        img_width=act_target.rect.width,
-                        img_height=act_target.rect.height,
+                        img_width=img_w,
+                        img_height=img_h,
                     )
                     driver.scroll(amount, x=sx, y=sy)
                 else:
@@ -219,6 +249,7 @@ class GuardedActionEngine(BaseExecutionEngine):
         action = payload.get("action", "").lower()
         if action == "hotkey":
             keys = [str(k).lower() for k in payload.get("keys", [])]
-            if "delete" in keys or "d" in keys and "win" in keys:
+            has_os_mod = any(m in keys for m in ("win", "command", "cmd", "super", "meta"))
+            if "delete" in keys or (has_os_mod and any(k in keys for k in ("d", "q", "backspace"))):
                 return True
         return False

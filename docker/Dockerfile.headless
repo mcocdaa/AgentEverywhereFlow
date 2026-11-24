@@ -11,6 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     openbox \
     x11vnc \
     wmctrl \
+    xclip \
     xdotool \
     libx11-6 \
     libxext6 \

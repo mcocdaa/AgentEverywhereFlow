@@ -6,16 +6,44 @@ Covers:
 3. Benchmark 3 (Guarded Mode): Strict JSON atomic actions and keyboard shortcuts.
 """
 
+import sys
 import threading
 import time
 import tkinter as tk
 from pathlib import Path
+from typing import Any
 
-from Xlib import display
+if sys.platform.startswith("linux"):
+    from Xlib import display as xlib_display
+else:
+    xlib_display = None
 
 from agenteverywhereflow.agent.loop import AgentLoop
 from agenteverywhereflow.capturer.base import Rect, TargetInfo, TargetType
 from agenteverywhereflow.config import AppConfig, ExecutionMode
+
+
+def _build_tk_target(root: tk.Tk, title: str, x: int, y: int) -> TargetInfo:
+    """Create a TargetInfo for a Tkinter window across Linux/macOS/Windows."""
+    wid = root.winfo_id()
+    if xlib_display is not None:
+        d: Any = xlib_display.Display()
+        win = d.create_resource_object("window", wid)
+        geom = win.get_geometry()
+        width, height = int(geom.width), int(geom.height)
+        target_id = f"xwin:{hex(wid)}"
+    else:
+        width = max(1, root.winfo_width())
+        height = max(1, root.winfo_height())
+        target_id = f"tkwin:{hex(wid)}"
+
+    return TargetInfo(
+        target_id=target_id,
+        target_type=TargetType.WINDOW,
+        title=title,
+        rect=Rect(x=x, y=y, width=width, height=height),
+        native_handle=wid,
+    )
 
 
 # ==============================================================================
@@ -122,18 +150,7 @@ def run_benchmark_form() -> bool:
 
     root.update()
 
-    wid = root.winfo_id()
-    d = display.Display()
-    win = d.create_resource_object("window", wid)
-    geom = win.get_geometry()
-
-    target = TargetInfo(
-        target_id=f"xwin:{hex(wid)}",
-        target_type=TargetType.WINDOW,
-        title="AEFlow Enterprise Form Bench",
-        rect=Rect(x=100, y=100, width=geom.width, height=geom.height),
-        native_handle=wid,
-    )
+    target = _build_tk_target(root, "AEFlow Enterprise Form Bench", 100, 100)
 
     # Autonomous Planner for Form
     def form_planner(messages, target_info, step_idx):
@@ -278,18 +295,7 @@ def run_benchmark_calculator() -> bool:
 
     root.update()
 
-    wid = root.winfo_id()
-    d = display.Display()
-    win = d.create_resource_object("window", wid)
-    geom = win.get_geometry()
-
-    target = TargetInfo(
-        target_id=f"xwin:{hex(wid)}",
-        target_type=TargetType.WINDOW,
-        title="AEFlow Calculator Bench",
-        rect=Rect(x=150, y=150, width=geom.width, height=geom.height),
-        native_handle=wid,
-    )
+    target = _build_tk_target(root, "AEFlow Calculator Bench", 150, 150)
 
     # Goal: Calculate 25 * 4 = (100)
     def calc_planner(messages, target_info, step_idx):
@@ -408,18 +414,7 @@ def run_benchmark_guarded() -> bool:
 
     root.update()
 
-    wid = root.winfo_id()
-    d = display.Display()
-    win = d.create_resource_object("window", wid)
-    geom = win.get_geometry()
-
-    target = TargetInfo(
-        target_id=f"xwin:{hex(wid)}",
-        target_type=TargetType.WINDOW,
-        title="AEFlow Guarded Control Bench",
-        rect=Rect(x=200, y=200, width=geom.width, height=geom.height),
-        native_handle=wid,
-    )
+    target = _build_tk_target(root, "AEFlow Guarded Control Bench", 200, 200)
 
     # Guarded Mode Planner emitting strict JSON schemas
     def guarded_planner(messages, target_info, step_idx):

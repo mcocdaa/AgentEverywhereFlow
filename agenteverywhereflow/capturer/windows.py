@@ -207,6 +207,7 @@ class WindowsCapturer(BaseCapturer):
                     target_type=TargetType.WINDOW,
                     title=title,
                     process_name=proc_name,
+                    pid=int(pid),
                     rect=Rect(x=x, y=y, width=width, height=height),
                     is_minimized=is_minimized,
                     native_handle=hwnd,
@@ -295,9 +296,13 @@ class WindowsCapturer(BaseCapturer):
         return None
 
     def capture(self, target: TargetInfo) -> Image.Image:
-        """Capture the target. Handles displays, foreground windows with popups, and background windows."""
-        if target.target_type == TargetType.DISPLAY:
-            return self._capture_rect(target.rect)
+        """Capture the target. Handles regions, displays, foreground windows with popups, and background windows."""
+        # Explicitly handle REGION and DISPLAY before checking native_handle so a region
+        # carrying an optional parent window handle never gets overwritten with parent bounds.
+        if target.target_type in (TargetType.REGION, TargetType.DISPLAY):
+            img = self._capture_rect(target.rect)
+            target.last_capture_size = (img.width, img.height)
+            return img
 
         # Window capture
         if is_windows and target.native_handle:
@@ -327,7 +332,9 @@ class WindowsCapturer(BaseCapturer):
             # capture directly from screen DC. This preserves 100% fidelity:
             # child popups, modal file dialogs, context menus, tooltips, and comboboxes.
             if self._is_foreground_or_child(hwnd, popup_hwnd):
-                return self._capture_rect(target.rect)
+                img = self._capture_rect(target.rect)
+                target.last_capture_size = (img.width, img.height)
+                return img
 
             # Otherwise (window is in background/occluded), use PrintWindow with PW_RENDERFULLCONTENT
             try:
@@ -343,20 +350,27 @@ class WindowsCapturer(BaseCapturer):
                                 )
                                 canvas.paste(img_parent, (x - target.rect.x, y - target.rect.y))
                                 canvas.paste(img_popup, (px - target.rect.x, py - target.rect.y))
+                                target.last_capture_size = (canvas.width, canvas.height)
                                 return canvas
                             else:
                                 img_parent.paste(img_popup, (px - x, py - y))
+                                target.last_capture_size = (img_parent.width, img_parent.height)
                                 return img_parent
                     except Exception:
                         pass
                 if img_parent:
+                    target.last_capture_size = (img_parent.width, img_parent.height)
                     return img_parent
             except Exception:
                 pass
 
-            return self._capture_rect(target.rect)
+            img = self._capture_rect(target.rect)
+            target.last_capture_size = (img.width, img.height)
+            return img
 
-        return self._capture_rect(target.rect)
+        img = self._capture_rect(target.rect)
+        target.last_capture_size = (img.width, img.height)
+        return img
 
     def _capture_rect(self, rect: Rect) -> Image.Image:
         """Fallback capture via mss."""
@@ -372,7 +386,7 @@ class WindowsCapturer(BaseCapturer):
 
     def focus(self, target: TargetInfo) -> bool:
         """Bring the target window to foreground reliably bypassing Windows lock."""
-        if target.target_type == TargetType.DISPLAY:
+        if target.target_type in (TargetType.REGION, TargetType.DISPLAY):
             return True
         if is_windows and target.native_handle:
             hwnd = target.native_handle
@@ -517,3 +531,77 @@ class WindowsCapturer(BaseCapturer):
             return True
         except Exception:
             return False
+
+    def target_at_point(self, x: int, y: int, exclude_pid: int | None = None) -> TargetInfo | None:
+        """Return topmost visible window at ``(x, y)`` using Win32 EnumWindows z-order."""
+        if not is_windows or win32gui is None:
+            return super().target_at_point(x, y, exclude_pid=exclude_pid)
+
+        hit: list[TargetInfo | None] = [None]
+
+        def enum_callback(hwnd: int, extra: Any) -> bool:
+            if hit[0] is not None:
+                return True
+            if not win32gui.IsWindow(hwnd) or not win32gui.IsWindowVisible(hwnd):
+                return True
+            if win32gui.IsIconic(hwnd):
+                return True
+
+            title = win32gui.GetWindowText(hwnd).strip()
+            if not title:
+                return True
+
+            class_name = win32gui.GetClassName(hwnd)
+            if class_name in ("Progman", "WorkerW", "Shell_TrayWnd", "Windows.UI.Core.CoreWindow"):
+                return True
+            if title in ("Program Manager", "NVIDIA GeForce Overlay", "Windows Input Experience"):
+                return True
+
+            # Skip DWM-cloaked invisible windows
+            try:
+                DWMWA_CLOAKED = 14
+                is_cloaked = ctypes.c_int(0)
+                ctypes.windll.dwmapi.DwmGetWindowAttribute(  # type: ignore[attr-defined]
+                    hwnd,
+                    DWMWA_CLOAKED,
+                    ctypes.byref(is_cloaked),
+                    ctypes.sizeof(is_cloaked),
+                )
+                if is_cloaked.value != 0:
+                    return True
+            except Exception:
+                pass
+
+            _, pid = win32process.GetWindowThreadProcessId(hwnd)
+            if exclude_pid is not None and pid == exclude_pid:
+                return True
+
+            wx, wy, width, height = self.get_window_bounds(hwnd)
+            if width <= 30 or height <= 30:
+                return True
+
+            if wx <= x < wx + width and wy <= y < wy + height:
+                proc_name = ""
+                try:
+                    import psutil
+
+                    proc_name = psutil.Process(pid).name()
+                except Exception:
+                    pass
+                hit[0] = TargetInfo(
+                    target_id=f"hwnd:{hex(hwnd)}",
+                    target_type=TargetType.WINDOW,
+                    title=title,
+                    process_name=proc_name,
+                    pid=int(pid),
+                    rect=Rect(x=wx, y=wy, width=width, height=height),
+                    is_minimized=False,
+                    native_handle=hwnd,
+                )
+            return True
+
+        try:
+            win32gui.EnumWindows(enum_callback, None)
+        except Exception:
+            pass
+        return hit[0]

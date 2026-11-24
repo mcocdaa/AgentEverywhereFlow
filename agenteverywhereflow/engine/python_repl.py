@@ -14,7 +14,7 @@ from rich.console import Console
 from agenteverywhereflow.actions.coords import CoordinateProjector
 from agenteverywhereflow.actions.driver import driver
 from agenteverywhereflow.capturer import get_capturer
-from agenteverywhereflow.capturer.base import TargetInfo
+from agenteverywhereflow.capturer.base import TargetInfo, TargetType
 from agenteverywhereflow.engine.base import BaseExecutionEngine, ExecutionResult
 
 
@@ -72,13 +72,41 @@ class PythonReplEngine(BaseExecutionEngine):
                 on_switch(tgt)
             return tgt
 
+        image_sizes: dict[str, tuple[int, int]] = dict(kwargs.get("image_sizes") or {})
+        explicit_img_size = kwargs.get("img_size") or kwargs.get("image_size")
+        if (
+            explicit_img_size is None
+            and kwargs.get("img_width") is not None
+            and kwargs.get("img_height") is not None
+        ):
+            explicit_img_size = (int(kwargs["img_width"]), int(kwargs["img_height"]))
+        if explicit_img_size is not None:
+            image_sizes.setdefault(
+                target.target_id, (int(explicit_img_size[0]), int(explicit_img_size[1]))
+            )
+
+        def _window_handle_for(tgt: TargetInfo) -> int:
+            return tgt.native_handle if tgt.target_type == TargetType.WINDOW else 0
+
+        def _resolve_image_size(tgt: TargetInfo) -> tuple[int, int]:
+            if tgt.target_id in image_sizes:
+                w, h = image_sizes[tgt.target_id]
+                if w > 0 and h > 0:
+                    return w, h
+            if tgt.last_capture_size is not None:
+                w, h = tgt.last_capture_size
+                if w > 0 and h > 0:
+                    return w, h
+            return tgt.rect.width, tgt.rect.height
+
         def _resolve_coords(x: float, y: float, tgt: TargetInfo) -> tuple[int, int]:
+            img_w, img_h = _resolve_image_size(tgt)
             return CoordinateProjector.to_screen_coords(
                 target=tgt,
                 x=x,
                 y=y,
-                img_width=tgt.rect.width,
-                img_height=tgt.rect.height,
+                img_width=img_w,
+                img_height=img_h,
             )
 
         def click(
@@ -101,9 +129,9 @@ class PythonReplEngine(BaseExecutionEngine):
                 y=sy,
                 button=button,  # type: ignore
                 clicks=clicks,
-                window_handle=tgt.native_handle,
-                window_rel_x=int(x),
-                window_rel_y=int(y),
+                window_handle=_window_handle_for(tgt),
+                window_rel_x=sx - tgt.rect.x,
+                window_rel_y=sy - tgt.rect.y,
             )
 
         def move(x: float, y: float, target: str | TargetInfo | None = None) -> None:
@@ -128,9 +156,9 @@ class PythonReplEngine(BaseExecutionEngine):
             driver.double_click(
                 x=sx,
                 y=sy,
-                window_handle=tgt.native_handle,
-                window_rel_x=int(x),
-                window_rel_y=int(y),
+                window_handle=_window_handle_for(tgt),
+                window_rel_x=sx - tgt.rect.x,
+                window_rel_y=sy - tgt.rect.y,
             )
 
         def drag(
@@ -164,25 +192,26 @@ class PythonReplEngine(BaseExecutionEngine):
             driver.right_click(
                 x=sx,
                 y=sy,
-                window_handle=tgt.native_handle,
-                window_rel_x=int(x),
-                window_rel_y=int(y),
+                window_handle=_window_handle_for(tgt),
+                window_rel_x=sx - tgt.rect.x,
+                window_rel_y=sy - tgt.rect.y,
             )
 
         def type_text(text: str, target: str | TargetInfo | None = None) -> None:
             tgt = switch_to(target) if target else active_target_box[0]
             self.capturer.focus(tgt)
-            method_desc = (
-                "Clipboard Injection (Ctrl+V)"
-                if (any(ord(c) > 127 for c in text) or sys.platform == "win32")
-                else "Keyboard Emulation"
-            )
+            if sys.platform == "darwin":
+                method_desc = "Clipboard Injection (Cmd+V)"
+            elif any(ord(c) > 127 for c in text) or sys.platform == "win32":
+                method_desc = "Clipboard Injection (Ctrl+V)"
+            else:
+                method_desc = "Keyboard Emulation"
             _log(
                 f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]type_text[/bold cyan]({repr(text)}) "
                 f"[dim]──▶ Method: {method_desc} [window='{tgt.title}'][/dim]",
                 f"⚡ [Tool Call] type_text({repr(text)}) ──▶ Method: {method_desc} [window='{tgt.title}']",
             )
-            driver.type_text(text, window_handle=tgt.native_handle)
+            driver.type_text(text, window_handle=_window_handle_for(tgt))
 
         def press(key: str, target: str | TargetInfo | None = None) -> None:
             tgt = switch_to(target) if target else active_target_box[0]
@@ -191,7 +220,7 @@ class PythonReplEngine(BaseExecutionEngine):
                 f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]press[/bold cyan]({repr(key)}) [dim][window='{tgt.title}'][/dim]",
                 f"⚡ [Tool Call] press({repr(key)}) [window='{tgt.title}']",
             )
-            driver.press_key(key, window_handle=tgt.native_handle)
+            driver.press_key(key, window_handle=_window_handle_for(tgt))
 
         def hotkey(*keys: str, target: str | TargetInfo | None = None) -> None:
             tgt = switch_to(target) if target else active_target_box[0]
@@ -200,7 +229,7 @@ class PythonReplEngine(BaseExecutionEngine):
                 f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]hotkey[/bold cyan]({', '.join(repr(k) for k in keys)}) [dim][window='{tgt.title}'][/dim]",
                 f"⚡ [Tool Call] hotkey({', '.join(repr(k) for k in keys)}) [window='{tgt.title}']",
             )
-            driver.hotkey(*keys, window_handle=tgt.native_handle)
+            driver.hotkey(*keys, window_handle=_window_handle_for(tgt))
 
         def scroll(
             amount: int,
@@ -234,7 +263,11 @@ class PythonReplEngine(BaseExecutionEngine):
                 f"  [bold yellow]⚡ [Tool Call][/bold yellow] [bold cyan]screenshot[/bold cyan]() [dim][window='{tgt.title}'][/dim]",
                 f"⚡ [Tool Call] screenshot() [window='{tgt.title}']",
             )
-            return self.capturer.capture(tgt)
+            img = self.capturer.capture(tgt)
+            if hasattr(img, "width") and hasattr(img, "height"):
+                tgt.last_capture_size = (int(img.width), int(img.height))
+                image_sizes[tgt.target_id] = (int(img.width), int(img.height))
+            return img
 
         return {
             "target": active_target_box[0],

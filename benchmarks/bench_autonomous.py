@@ -4,12 +4,17 @@ Runs a live GUI app and executes the autonomous Agent perception-action loop
 to prove completion of a multi-step user goal.
 """
 
+import sys
 import threading
 import time
 import tkinter as tk
 from pathlib import Path
+from typing import Any
 
-from Xlib import display
+if sys.platform.startswith("linux"):
+    from Xlib import display as xlib_display
+else:
+    xlib_display = None
 
 from agenteverywhereflow.agent.loop import AgentLoop
 from agenteverywhereflow.capturer.base import Rect, TargetInfo, TargetType
@@ -60,15 +65,22 @@ def main() -> None:
     root.update()
 
     wid = root.winfo_id()
-    d = display.Display()
-    win = d.create_resource_object("window", wid)
-    geom = win.get_geometry()
+    if xlib_display is not None:
+        d: Any = xlib_display.Display()
+        win = d.create_resource_object("window", wid)
+        geom = win.get_geometry()
+        width, height = int(geom.width), int(geom.height)
+        target_id = f"xwin:{hex(wid)}"
+    else:
+        width = max(1, root.winfo_width())
+        height = max(1, root.winfo_height())
+        target_id = f"tkwin:{hex(wid)}"
 
     target = TargetInfo(
-        target_id=f"xwin:{hex(wid)}",
+        target_id=target_id,
         target_type=TargetType.WINDOW,
         title="AEFlow Autonomous Task Window",
-        rect=Rect(x=100, y=100, width=geom.width, height=geom.height),
+        rect=Rect(x=100, y=100, width=width, height=height),
         native_handle=wid,
     )
 

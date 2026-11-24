@@ -1,5 +1,7 @@
 """System prompts and instructions for AgentEverywhereFlow."""
 
+import sys
+
 from agenteverywhereflow.capturer.base import TargetInfo
 
 MINIMAL_MODE_SYSTEM_PROMPT = """You are AgentEverywhereFlow, an autonomous GUI agent operating directly on a user-designated screen or application window.
@@ -22,7 +24,7 @@ In your Python environment, the following helper functions and objects are pre-i
 5. `drag(from_x, from_y, to_x, to_y, duration=0.5)`: Drags mouse from (from_x, from_y) to (to_x, to_y). Useful for sliders, dragging files, or dragging collapsed splitter bars to resize panels.
 6. `type_text("text")`: Types text into the currently active element.
 7. `press("enter" | "esc" | "tab" | "backspace" | ...)`: Presses a single key.
-8. `hotkey("ctrl", "c")`: Triggers key combinations.
+8. `hotkey("{primary_mod}", "c")`: Triggers key combinations (on this OS, use `"{primary_mod}"` as the primary shortcut modifier for copy/paste/select-all).
 9. `scroll(amount, x=None, y=None)`: Scrolls mouse wheel (positive for up, negative for down). Provide (x, y) coordinates to place the mouse over the scrollable container before scrolling.
 10. `wait(seconds)`: Sleeps for N seconds.
 11. `target`: TargetInfo object with details of the current window.
@@ -64,7 +66,7 @@ Available JSON Action Schemas:
 2. Move: {{"action": "move", "x": <int>, "y": <int>}}
 3. Type: {{"action": "type", "text": "<string>"}}
 4. Press Key: {{"action": "press", "key": "<key_name>"}}
-5. Hotkey: {{"action": "hotkey", "keys": ["<key1>", "<key2>"]}}
+5. Hotkey: {{"action": "hotkey", "keys": ["{primary_mod}", "<key>"]}} (use "{primary_mod}" as the primary OS modifier)
 6. Scroll: {{"action": "scroll", "amount": <int>, "x": <int|null>, "y": <int|null>}}
 7. Wait: {{"action": "wait", "seconds": <float>}}
 8. Finish: {{"action": "finish", "message": "<completion_summary>"}}
@@ -86,13 +88,15 @@ Guidelines:
 
 
 def get_prompt_for_target(target: TargetInfo, is_minimal_mode: bool = True) -> str:
-    """Format prompt with live target geometry."""
+    """Format prompt with live target geometry and OS-appropriate modifier hint."""
     template = MINIMAL_MODE_SYSTEM_PROMPT if is_minimal_mode else GUARDED_MODE_SYSTEM_PROMPT
+    primary_mod = "command" if sys.platform == "darwin" else "ctrl"
     return template.format(
         target_type=target.target_type.value,
         target_title=target.title,
         width=target.rect.width,
         height=target.rect.height,
+        primary_mod=primary_mod,
     )
 
 
