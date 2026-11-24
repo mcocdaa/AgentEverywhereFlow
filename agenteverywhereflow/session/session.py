@@ -5,8 +5,10 @@ import io
 import json
 import logging
 import re
+import sys
 import threading
 import time
+import traceback
 import uuid
 from collections.abc import Callable
 from pathlib import Path
@@ -21,6 +23,7 @@ from agenteverywhereflow.capturer import get_capturer
 from agenteverywhereflow.capturer.base import Rect, TargetInfo, TargetType
 from agenteverywhereflow.config import AppConfig, ExecutionMode, config
 from agenteverywhereflow.engine import get_engine
+from agenteverywhereflow.engine.base import ExecutionResult
 from agenteverywhereflow.security.permission import (
     ApprovalDecision,
     ApprovalRequest,
@@ -31,6 +34,77 @@ from agenteverywhereflow.session.state import SessionEvent, SessionEventType, Se
 from agenteverywhereflow.session.storage import TokenUsageStats, session_storage
 
 logger = logging.getLogger(__name__)
+
+
+class StreamDeltaEvent(SessionEvent):
+    """Ephemeral token-level streaming delta event (reasoning_delta / talk_delta)."""
+
+    event_type: str  # type: ignore[assignment]
+
+
+def _parse_target_type(raw_type: Any) -> TargetType:
+    """Safely parse a persisted TargetType string, supporting cross-branch REGION targets."""
+    if isinstance(raw_type, TargetType):
+        return raw_type
+    val = str(raw_type or "window").strip().lower()
+    try:
+        return TargetType(val)
+    except ValueError:
+        if val == "region":
+            return getattr(TargetType, "REGION", TargetType.DISPLAY)
+        return TargetType.WINDOW
+
+
+class _ThinkStreamRouter:
+    """Incremental parser splitting streamed content tokens into reasoning vs talk deltas."""
+
+    def __init__(self) -> None:
+        self._in_think = False
+        self._pending = ""
+
+    def feed(self, text: str) -> list[tuple[str, str]]:
+        """Consume a streamed chunk and return ``[(delta_type, piece), ...]``."""
+        if not text:
+            return []
+        buf = self._pending + text
+        self._pending = ""
+        out: list[tuple[str, str]] = []
+
+        while buf:
+            tag = "</think>" if self._in_think else "<think>"
+            idx = buf.find(tag)
+            if idx != -1:
+                if idx > 0:
+                    out.append(("reasoning_delta" if self._in_think else "talk_delta", buf[:idx]))
+                self._in_think = not self._in_think
+                buf = buf[idx + len(tag) :]
+                continue
+
+            # Hold back a possible partial tag prefix at the end of the buffer
+            hold = 0
+            max_check = min(len(tag) - 1, len(buf))
+            for k in range(max_check, 0, -1):
+                if tag.startswith(buf[-k:]):
+                    hold = k
+                    break
+            if hold:
+                emit_part = buf[:-hold]
+                self._pending = buf[-hold:]
+            else:
+                emit_part = buf
+            if emit_part:
+                out.append(("reasoning_delta" if self._in_think else "talk_delta", emit_part))
+            break
+
+        return out
+
+    def flush(self) -> list[tuple[str, str]]:
+        """Flush any trailing buffered characters at end of stream."""
+        if not self._pending:
+            return []
+        rem = self._pending
+        self._pending = ""
+        return [("reasoning_delta" if self._in_think else "talk_delta", rem)]
 
 
 class TurnResult(BaseModel):
@@ -127,6 +201,8 @@ class ChatSession:
         planner_func: Any | None = None,
         approval_timeout: float = 300.0,
         title: str = "",
+        cdp_backend: Any | None = None,
+        enable_streaming: bool = True,
     ) -> None:
         self.session_id = session_id or uuid.uuid4().hex[:10]
         if targets:
@@ -143,6 +219,11 @@ class ChatSession:
         self.config = app_config or config
         self.planner_func = planner_func
         self.approval_timeout = approval_timeout
+        self.enable_streaming = enable_streaming
+        self.cdp_backend: Any | None = cdp_backend
+        self._cdp_backends: dict[str, Any] = {}
+        if cdp_backend is not None:
+            self._cdp_backends[self.target.target_id] = cdp_backend
 
         self.capturer = get_capturer()
         self.engine = get_engine(mode)
@@ -230,6 +311,424 @@ class ChatSession:
                 listener(event)
             except Exception as e:
                 logger.warning(f"Error notifying session listener: {e}")
+
+    def emit_stream_delta(
+        self,
+        delta_type: str,
+        step: int,
+        delta: str,
+    ) -> None:
+        """Broadcast an ephemeral token-level streaming delta to active listeners."""
+        if not delta:
+            return
+        payload: dict[str, Any] = {
+            "delta": delta,
+            "content": delta,
+            "text": delta,
+        }
+        if delta_type == "reasoning_delta":
+            payload["thinking"] = delta
+        event = StreamDeltaEvent(
+            session_id=self.session_id,
+            event_type=delta_type,
+            step=step,
+            payload=payload,
+        )
+        for listener in list(self.listeners):
+            try:
+                listener(event)
+            except Exception as e:
+                logger.warning(f"Error notifying session stream listener: {e}")
+
+    def set_cdp_backend(self, backend: Any | None, target_id: str | None = None) -> None:
+        """Bind or clear a headless CDPActionBackend for this session or a specific target."""
+        tid = target_id or self.target.target_id
+        if backend is None:
+            self._cdp_backends.pop(tid, None)
+            if tid == self.target.target_id:
+                self.cdp_backend = None
+        else:
+            self._cdp_backends[tid] = backend
+            if tid == self.target.target_id or self.cdp_backend is None:
+                self.cdp_backend = backend
+
+    def _get_cdp_backend(self, target: TargetInfo | None = None) -> Any | None:
+        """Resolve an attached CDPActionBackend for the given target, if any."""
+        tgt = target or self.target
+        if tgt.target_id in self._cdp_backends:
+            return self._cdp_backends[tgt.target_id]
+        if self.cdp_backend is not None and (
+            tgt.target_id.startswith("cdp:") or tgt.target_id == self.target.target_id
+        ):
+            return self.cdp_backend
+        return None
+
+    def _capture_target(self, target: TargetInfo) -> Image.Image:
+        """Capture a target frame via CDP if bound, otherwise via the OS capturer."""
+        cdp = self._get_cdp_backend(target)
+        if cdp is not None:
+            img: Image.Image = cdp.capture()
+            if img.width > 0 and img.height > 0:
+                if target.rect.width != img.width or target.rect.height != img.height:
+                    target.rect = Rect(x=0, y=0, width=img.width, height=img.height)
+            return img
+        return self.capturer.capture(target)
+
+    def _execute_cdp_codeact(
+        self,
+        code_str: str,
+        cdp_backend: Any,
+        target: TargetInfo,
+    ) -> ExecutionResult:
+        """Execute CodeAct Python actions headlessly through CDP without OS focus/cursor steal."""
+        cleaned = code_str.strip()
+        if cleaned.startswith("```"):
+            lines = cleaned.split("\n")
+            if lines[0].startswith("```"):
+                lines = lines[1:]
+            if lines and lines[-1].strip() == "```":
+                lines = lines[:-1]
+            cleaned = "\n".join(lines).strip()
+
+        tool_logs: list[str] = []
+
+        def _click(
+            x: float,
+            y: float,
+            button: str = "left",
+            clicks: int = 1,
+            target: str | TargetInfo | None = None,
+        ) -> None:
+            _ = target
+            tool_logs.append(
+                f"⚡ [CDP] click(x={int(x)}, y={int(y)}, button={button}, clicks={clicks})"
+            )
+            cdp_backend.click(x, y, button=button, click_count=clicks)
+
+        def _move(x: float, y: float, target: str | TargetInfo | None = None) -> None:
+            _ = target
+            tool_logs.append(f"⚡ [CDP] move(x={int(x)}, y={int(y)})")
+            cdp_backend.move_to(x, y)
+
+        def _double_click(x: float, y: float, target: str | TargetInfo | None = None) -> None:
+            _ = target
+            tool_logs.append(f"⚡ [CDP] double_click(x={int(x)}, y={int(y)})")
+            cdp_backend.double_click(x, y)
+
+        def _right_click(x: float, y: float, target: str | TargetInfo | None = None) -> None:
+            _ = target
+            tool_logs.append(f"⚡ [CDP] right_click(x={int(x)}, y={int(y)})")
+            cdp_backend.right_click(x, y)
+
+        def _drag(
+            from_x: float,
+            from_y: float,
+            to_x: float,
+            to_y: float,
+            duration: float = 0.5,
+            target: str | TargetInfo | None = None,
+        ) -> None:
+            _ = target
+            tool_logs.append(
+                f"⚡ [CDP] drag({int(from_x)}, {int(from_y)} -> {int(to_x)}, {int(to_y)})"
+            )
+            cdp_backend.drag(from_x, from_y, to_x, to_y, duration=duration)
+
+        def _type_text(text: str, target: str | TargetInfo | None = None) -> None:
+            _ = target
+            tool_logs.append(f"⚡ [CDP] type_text({text!r})")
+            cdp_backend.type_text(text)
+
+        def _press(key: str, target: str | TargetInfo | None = None) -> None:
+            _ = target
+            tool_logs.append(f"⚡ [CDP] press({key!r})")
+            cdp_backend.press_key(key)
+
+        def _hotkey(*keys: str, target: str | TargetInfo | None = None) -> None:
+            _ = target
+            tool_logs.append(f"⚡ [CDP] hotkey({', '.join(repr(k) for k in keys)})")
+            cdp_backend.hotkey(*keys)
+
+        def _scroll(
+            amount: int,
+            x: float | None = None,
+            y: float | None = None,
+            target: str | TargetInfo | None = None,
+        ) -> None:
+            _ = target
+            sx = float(x) if x is not None else float(target_obj.rect.width // 2)
+            sy = float(y) if y is not None else float(target_obj.rect.height // 2)
+            tool_logs.append(f"⚡ [CDP] scroll(amount={amount}, x={int(sx)}, y={int(sy)})")
+            cdp_backend.scroll(sx, sy, amount)
+
+        def _wait(seconds: float) -> None:
+            tool_logs.append(f"⚡ [CDP] wait({seconds}s)")
+            time.sleep(seconds)
+
+        def _screenshot(target: str | TargetInfo | None = None) -> Image.Image:
+            _ = target
+            tool_logs.append("⚡ [CDP] screenshot()")
+            return cdp_backend.capture()
+
+        def _get_ax_tree(max_nodes: int = 200) -> list[dict[str, Any]]:
+            tool_logs.append(f"⚡ [CDP] get_accessibility_tree(max_nodes={max_nodes})")
+            return cdp_backend.get_accessibility_tree(max_nodes=max_nodes)
+
+        target_obj = target
+
+        def _switch_to(target_query: str | TargetInfo) -> TargetInfo:
+            switched = self.switch_target(target_query)
+            tool_logs.append(f"⚡ [CDP] switch_to({target_query!r}) -> {switched.target_id}")
+            return switched
+
+        context: dict[str, Any] = {
+            "target": target_obj,
+            "targets": self.targets,
+            "switch_to": _switch_to,
+            "focus": _switch_to,
+            "click": _click,
+            "move": _move,
+            "double_click": _double_click,
+            "right_click": _right_click,
+            "drag": _drag,
+            "type_text": _type_text,
+            "press": _press,
+            "hotkey": _hotkey,
+            "scroll": _scroll,
+            "wait": _wait,
+            "screenshot": _screenshot,
+            "get_accessibility_tree": _get_ax_tree,
+        }
+
+        old_stdout, old_stderr = sys.stdout, sys.stderr
+        redirected_out, redirected_err = io.StringIO(), io.StringIO()
+        success = True
+        error_msg = ""
+        try:
+            sys.stdout = redirected_out
+            sys.stderr = redirected_err
+            exec(cleaned, context)
+        except Exception:
+            success = False
+            error_msg = traceback.format_exc()
+        finally:
+            sys.stdout = old_stdout
+            sys.stderr = old_stderr
+
+        output_str = redirected_out.getvalue()
+        if redirected_err.getvalue():
+            output_str += "\n[stderr]\n" + redirected_err.getvalue()
+        return ExecutionResult(
+            success=success,
+            output=output_str.strip(),
+            error=error_msg,
+            data={"executed_code": cleaned, "tool_calls": tool_logs, "backend": "cdp"},
+        )
+
+    def _execute_cdp_guarded(
+        self,
+        payload_data: dict[str, Any],
+        cdp_backend: Any,
+        target: TargetInfo,
+    ) -> ExecutionResult:
+        """Execute a structured Guarded JSON action headlessly through CDP."""
+        action = str(payload_data.get("action", "")).lower().strip()
+        if not action:
+            return ExecutionResult(success=False, error="No action specified in payload")
+        try:
+            if action in ("switch_target", "switch_to"):
+                target_override = payload_data.get("target")
+                if target_override:
+                    switched = self.switch_target(str(target_override))
+                    return ExecutionResult(
+                        success=True, output=f"Switched active target to: {switched.title}"
+                    )
+                return ExecutionResult(success=True, output=f"Active target: {target.title}")
+            if action == "click":
+                x = float(payload_data.get("x", 0))
+                y = float(payload_data.get("y", 0))
+                button = str(payload_data.get("button", "left"))
+                clicks = int(payload_data.get("clicks", 1))
+                cdp_backend.click(x, y, button=button, click_count=clicks)
+                return ExecutionResult(success=True, output=f"CDP clicked at ({x}, {y})")
+            if action == "double_click":
+                x = float(payload_data.get("x", 0))
+                y = float(payload_data.get("y", 0))
+                cdp_backend.double_click(x, y)
+                return ExecutionResult(success=True, output=f"CDP double-clicked at ({x}, {y})")
+            if action == "right_click":
+                x = float(payload_data.get("x", 0))
+                y = float(payload_data.get("y", 0))
+                cdp_backend.right_click(x, y)
+                return ExecutionResult(success=True, output=f"CDP right-clicked at ({x}, {y})")
+            if action == "move":
+                x = float(payload_data.get("x", 0))
+                y = float(payload_data.get("y", 0))
+                cdp_backend.move_to(x, y)
+                return ExecutionResult(success=True, output=f"CDP moved to ({x}, {y})")
+            if action == "drag":
+                cdp_backend.drag(
+                    float(payload_data.get("from_x", 0)),
+                    float(payload_data.get("from_y", 0)),
+                    float(payload_data.get("to_x", 0)),
+                    float(payload_data.get("to_y", 0)),
+                    duration=float(payload_data.get("duration", 0.5)),
+                )
+                return ExecutionResult(success=True, output="CDP drag completed")
+            if action == "type":
+                text = str(payload_data.get("text", ""))
+                cdp_backend.type_text(text)
+                return ExecutionResult(success=True, output=f"CDP typed text: {text}")
+            if action == "press":
+                key = str(payload_data.get("key", ""))
+                cdp_backend.press_key(key)
+                return ExecutionResult(success=True, output=f"CDP pressed key: {key}")
+            if action == "hotkey":
+                keys = payload_data.get("keys", [])
+                cdp_backend.hotkey(*[str(k) for k in keys])
+                return ExecutionResult(success=True, output=f"CDP sent hotkey: {keys}")
+            if action == "scroll":
+                amount = int(payload_data.get("amount", 0))
+                sx = float(payload_data.get("x", target.rect.width // 2))
+                sy = float(payload_data.get("y", target.rect.height // 2))
+                cdp_backend.scroll(sx, sy, amount)
+                return ExecutionResult(
+                    success=True, output=f"CDP scrolled {amount} at ({sx}, {sy})"
+                )
+            if action == "wait":
+                seconds = float(payload_data.get("seconds", 1.0))
+                time.sleep(seconds)
+                return ExecutionResult(success=True, output=f"Waited {seconds}s")
+            return ExecutionResult(success=False, error=f"Unknown CDP action: '{action}'")
+        except Exception as exc:
+            return ExecutionResult(success=False, error=str(exc))
+
+    def _record_usage(self, usage: Any) -> None:
+        """Accumulate prompt, completion, and KV cache hit token metrics."""
+        if not usage:
+            return
+        p_tok = getattr(usage, "prompt_tokens", 0) or 0
+        c_tok = getattr(usage, "completion_tokens", 0) or 0
+        cached_tok = getattr(usage, "prompt_cache_hit_tokens", 0) or 0
+        if not cached_tok:
+            ptd = getattr(usage, "prompt_tokens_details", None)
+            if ptd:
+                cached_tok = getattr(ptd, "cached_tokens", 0) or 0
+
+        self.token_usage.prompt_tokens += int(p_tok)
+        self.token_usage.completion_tokens += int(c_tok)
+        self.token_usage.total_tokens += int(p_tok) + int(c_tok)
+        self.token_usage.cached_prompt_tokens += int(cached_tok)
+
+    def _invoke_vlm(self, step: int) -> tuple[str, str]:
+        """Call the configured Vision-LLM with token-level streaming and graceful fallback.
+
+        Returns:
+            ``(assistant_text, raw_thinking)``
+        """
+        if not self.enable_streaming:
+            non_stream_resp = self.client.chat.completions.create(
+                model=self.config.model_name,
+                messages=self.messages,  # type: ignore[arg-type]
+                temperature=0.2,
+            )
+            return self._extract_non_streaming_response(non_stream_resp)
+
+        response: Any = None
+        try:
+            response = self.client.chat.completions.create(
+                model=self.config.model_name,
+                messages=self.messages,  # type: ignore[arg-type]
+                temperature=0.2,
+                stream=True,
+                stream_options={"include_usage": True},
+            )
+        except Exception as exc:
+            err_lower = str(exc).lower()
+            if isinstance(exc, TypeError) or "stream_options" in err_lower:
+                try:
+                    response = self.client.chat.completions.create(
+                        model=self.config.model_name,
+                        messages=self.messages,  # type: ignore[arg-type]
+                        temperature=0.2,
+                        stream=True,
+                    )
+                except Exception as exc2:
+                    if isinstance(exc2, TypeError) or "stream" in str(exc2).lower():
+                        response = self.client.chat.completions.create(
+                            model=self.config.model_name,
+                            messages=self.messages,  # type: ignore[arg-type]
+                            temperature=0.2,
+                        )
+                    else:
+                        raise
+            elif "stream" in err_lower:
+                response = self.client.chat.completions.create(
+                    model=self.config.model_name,
+                    messages=self.messages,  # type: ignore[arg-type]
+                    temperature=0.2,
+                )
+            else:
+                raise
+
+        # If the client or test mock returned a non-streaming completion object directly
+        choices_attr = getattr(response, "choices", None)
+        if isinstance(choices_attr, (list, tuple)) and len(choices_attr) > 0:
+            return self._extract_non_streaming_response(response)
+
+        if not hasattr(response, "__iter__"):
+            fallback_resp = self.client.chat.completions.create(
+                model=self.config.model_name,
+                messages=self.messages,  # type: ignore[arg-type]
+                temperature=0.2,
+            )
+            return self._extract_non_streaming_response(fallback_resp)
+
+        content_parts: list[str] = []
+        raw_thinking_parts: list[str] = []
+        router = _ThinkStreamRouter()
+
+        for chunk in response:
+            if self._abort_requested.is_set():
+                break
+            chunk_usage = getattr(chunk, "usage", None)
+            if chunk_usage is not None:
+                self._record_usage(chunk_usage)
+
+            chunk_choices = getattr(chunk, "choices", None)
+            if not chunk_choices:
+                continue
+            delta = getattr(chunk_choices[0], "delta", None)
+            if delta is None:
+                continue
+
+            r_piece = getattr(delta, "reasoning_content", None) or getattr(delta, "reasoning", None)
+            if isinstance(r_piece, str) and r_piece:
+                raw_thinking_parts.append(r_piece)
+                self.emit_stream_delta("reasoning_delta", step=step, delta=r_piece)
+
+            c_piece = getattr(delta, "content", None)
+            if isinstance(c_piece, str) and c_piece:
+                content_parts.append(c_piece)
+                for delta_type, part in router.feed(c_piece):
+                    self.emit_stream_delta(delta_type, step=step, delta=part)
+
+        for delta_type, part in router.flush():
+            self.emit_stream_delta(delta_type, step=step, delta=part)
+
+        return "".join(content_parts), "".join(raw_thinking_parts)
+
+    def _extract_non_streaming_response(self, response: Any) -> tuple[str, str]:
+        """Extract assistant text, structured reasoning, and usage from a standard completion."""
+        choice = response.choices[0]
+        assistant_text = choice.message.content or ""
+        raw_thinking = (
+            getattr(choice.message, "reasoning_content", None)
+            or getattr(choice.message, "reasoning", None)
+            or ""
+        )
+        self._record_usage(getattr(response, "usage", None))
+        return assistant_text, str(raw_thinking)
 
     def set_permission_mode(self, mode: PermissionMode) -> None:
         """Update permission mode (auto or manual) dynamically."""
@@ -338,7 +837,7 @@ class ChatSession:
 
     def capture_frame(self) -> Image.Image:
         """Capture live viewport frame of the target without altering window focus."""
-        return self.capturer.capture(self.target)
+        return self._capture_target(self.target)
 
     def _encode_image(self, img: Image.Image) -> str:
         """Encode PIL Image to base64 JPEG."""
@@ -445,7 +944,7 @@ class ChatSession:
                 targets_list.append(
                     TargetInfo(
                         target_id=t_dict.get("target_id", ""),
-                        target_type=TargetType(t_dict.get("target_type", "window")),
+                        target_type=_parse_target_type(t_dict.get("target_type", "window")),
                         title=t_dict.get("title", ""),
                         process_name=t_dict.get("process_name", ""),
                         rect=rect,
@@ -462,7 +961,7 @@ class ChatSession:
             )
             target = TargetInfo(
                 target_id=meta.target_id,
-                target_type=TargetType(meta.target_type),
+                target_type=_parse_target_type(meta.target_type),
                 title=meta.target_title,
                 process_name=meta.process_name,
                 rect=rect,
@@ -641,7 +1140,7 @@ class ChatSession:
             # 1. Capture screenshot(s) and build visual observation
             if len(self.targets) <= 1:
                 try:
-                    img = self.capturer.capture(self.target)
+                    img = self._capture_target(self.target)
                     img_b64 = self._encode_image(img)
                 except Exception as e:
                     err_msg = f"Failed to capture target viewport: {e}"
@@ -678,7 +1177,7 @@ class ChatSession:
                     is_active = t.target_id == self.target.target_id
                     active_tag = " [ACTIVE FOCUS]" if is_active else ""
                     try:
-                        t_img = self.capturer.capture(t)
+                        t_img = self._capture_target(t)
                         last_img = t_img
                         t_b64 = self._encode_image(t_img)
                         obs_content.append(
@@ -739,36 +1238,7 @@ class ChatSession:
                     )
             else:
                 try:
-                    response = self.client.chat.completions.create(
-                        model=self.config.model_name,
-                        messages=self.messages,  # type: ignore[arg-type]
-                        temperature=0.2,
-                    )
-                    choice = response.choices[0]
-                    assistant_text = choice.message.content or ""
-                    raw_thinking = (
-                        getattr(choice.message, "reasoning_content", None)
-                        or getattr(choice.message, "reasoning", None)
-                        or ""
-                    )
-
-                    # Extract Token usage and KV cache hit metrics
-                    usage = getattr(response, "usage", None)
-                    if usage:
-                        p_tok = getattr(usage, "prompt_tokens", 0)
-                        c_tok = getattr(usage, "completion_tokens", 0)
-                        # DeepSeek Context Caching hit tokens:
-                        cached_tok = getattr(usage, "prompt_cache_hit_tokens", 0)
-                        if not cached_tok:
-                            # OpenAI / vLLM cached prompt tokens:
-                            ptd = getattr(usage, "prompt_tokens_details", None)
-                            if ptd:
-                                cached_tok = getattr(ptd, "cached_tokens", 0)
-
-                        self.token_usage.prompt_tokens += p_tok
-                        self.token_usage.completion_tokens += c_tok
-                        self.token_usage.total_tokens += p_tok + c_tok
-                        self.token_usage.cached_prompt_tokens += cached_tok
+                    assistant_text, raw_thinking = self._invoke_vlm(step=turn_steps)
                 except Exception as e:
                     err_msg = f"LLM API Error: {e}"
                     self.state = SessionState.ERROR
@@ -856,12 +1326,16 @@ class ChatSession:
                         continue
 
                     # Executed with permission
-                    result = self.engine.execute(
-                        code_to_exec,
-                        self.target,
-                        targets=self.targets,
-                        on_switch_target=self._on_engine_switch_target,
-                    )
+                    active_cdp = self._get_cdp_backend(self.target)
+                    if active_cdp is not None:
+                        result = self._execute_cdp_codeact(code_to_exec, active_cdp, self.target)
+                    else:
+                        result = self.engine.execute(
+                            code_to_exec,
+                            self.target,
+                            targets=self.targets,
+                            on_switch_target=self._on_engine_switch_target,
+                        )
                     executed_action = True
                     action_success = result.success
                     if result.success:
@@ -991,12 +1465,16 @@ class ChatSession:
                         )
                         continue
 
-                    result = self.engine.execute(
-                        payload_data,
-                        self.target,
-                        targets=self.targets,
-                        on_switch_target=self._on_engine_switch_target,
-                    )
+                    active_cdp = self._get_cdp_backend(self.target)
+                    if active_cdp is not None:
+                        result = self._execute_cdp_guarded(payload_data, active_cdp, self.target)
+                    else:
+                        result = self.engine.execute(
+                            payload_data,
+                            self.target,
+                            targets=self.targets,
+                            on_switch_target=self._on_engine_switch_target,
+                        )
                     executed_action = True
                     action_success = result.success
                     if result.success:
