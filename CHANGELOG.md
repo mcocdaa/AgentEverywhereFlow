@@ -3,6 +3,30 @@
 所有关于 **AgentEverywhereFlow (AEFlow)** 的重要变动都将记录在此文件中。  
 本项目遵循 [Semantic Versioning (语义化版本 2.0.0)](https://semver.org/lang/zh-CN/) 与 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/) 规范。
 
+## [0.2.0] - 2026-11-24
+
+### 新增与核心特性 (Added & Core Features)
+- **`uv` / PyPI 零源码极简体验与 3 行 Python SDK**：
+  - 注册双 CLI 入口（`aef` 与 `agenteverywhereflow`）及 `python -m agenteverywhereflow`，补充 PyPI OIDC Trusted Publishing 自动发布流。
+  - 新增顶层 Python SDK（`agenteverywhereflow/sdk.py`），在包根导出 `aef.run()`、`aef.Agent`、`RunResult`、`list_targets()`、`serve()` 与 `ConfigurationError`，摆脱 CLI 退出异常耦合。
+  - 新增 `aef init`（交互式厂商预设配置向导）、`aef doctor`（全栈环境与权限自检）以及 `~/.aef/daemon.json` 守护进程自动发现协议。
+- **跨平台底座全面升级（macOS + Ubuntu X11 + Windows + `REGION`）**：
+  - **macOS 原生支持**：新增 `MacCapturer`（Quartz 窗口/显示器列表、隔离截屏、`NSRunningApplication`/`AXUIElement` 聚焦移窗、Z-order `target_at_point` 与屏幕录制/辅助功能 TCC 权限预检），修复文本输入为剪贴板 + `command+v` 并新增原生 Quartz `CGEvent` 双击支持。
+  - **Ubuntu X11 & Windows 驱动重构**：Linux X11 默认切换为 `Xlib.ext.xtest`（兼容 Chrome/VS Code/Electron），修复非窗口目标 `display:1` 点击静默丢包，补全 `process_name`、动态 `rect` 刷新与 Wayland 检测提示；Windows 输入升级为 `ctypes` `SendInput`。
+  - **区域选区与 Retina DPI**：三平台统一支持 `TargetType.REGION` 与 Z-order 拾取，并将真实截图尺寸贯通 `CoordinateProjector` 以支持 2x Retina 缩放；CI 新增 `macos-latest` 测试矩阵。
+- **CDP 无头浏览器后端、Token 流式输出与新一代选窗/配置 API**：
+  - 新增零额外依赖 `CDPActionBackend`（基于标准库与核心 `websockets`），支持 Chrome/Edge/Electron 真后台无感截屏、鼠标/键盘注入、中文文本输入及无障碍树提取。
+  - `ChatSession` 支持 VLM Token 级流式事件（`reasoning_delta` / `talk_delta`）；FastAPI 服务新增多目标 `target_ids`、`region`、CDP 目标创建、`/targets/{id}/thumbnail`、`/targets/at-point`、`/targets/cdp`、`GET/PATCH /api/v1/config` 及全局事件总线 `WS /api/v1/events`。
+- **配套前端升级并更名为 `AgentEverywhereFlow-UI`**：
+  - 内嵌升级版 WebUI Studio v2（Zoom 缩略图网格、CDP 标签页扫描、内置模型设置弹窗、`?session=` 深链与流式呈现）。
+  - 官方前端仓库更名为 **[AgentEverywhereFlow-UI](https://github.com/mcocdaa/AgentEverywhereFlow-UI)**，同步推出轻量级 **Tauri v2 桌面启动器（`AEFlow Desktop`）**。
+
+### 修复 (Fixed)
+- 修复 `AppConfig` 默认端点与环境变量静默路由/覆盖显式参数缺陷。
+- 修复 `aef run -d` 短参数冲突（`--to-display` 调整为 `-D`）。
+- 修复导出 Python 工作流脚本 `import driver` 运行崩溃，并自动附加 PEP 723 元数据支持 `uv run workflow.py` 直跑。
+- 修复 `aef ui update` 安装路径优先级被内置资源覆盖的问题。
+
 ## [0.1.5] - 2026-09-29
 
 ### 新增与核心特性 (Added & Core Features)

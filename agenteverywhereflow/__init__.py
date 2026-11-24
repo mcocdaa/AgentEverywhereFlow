@@ -14,7 +14,7 @@ if sys.platform == "win32":
     except Exception:
         pass
 
-__version__ = "0.1.5"
+__version__ = "0.2.0"
 
 from agenteverywhereflow.config import (  # noqa: E402
     AppConfig,
