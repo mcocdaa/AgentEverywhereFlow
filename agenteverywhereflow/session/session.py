@@ -43,15 +43,13 @@ class StreamDeltaEvent(SessionEvent):
 
 
 def _parse_target_type(raw_type: Any) -> TargetType:
-    """Safely parse a persisted TargetType string, supporting cross-branch REGION targets."""
+    """Safely parse a persisted TargetType string (display, window, or region)."""
     if isinstance(raw_type, TargetType):
         return raw_type
     val = str(raw_type or "window").strip().lower()
     try:
         return TargetType(val)
     except ValueError:
-        if val == "region":
-            return getattr(TargetType, "REGION", TargetType.DISPLAY)
         return TargetType.WINDOW
 
 
@@ -369,10 +367,14 @@ class ChatSession:
         if cdp is not None:
             img: Image.Image = cdp.capture()
             if img.width > 0 and img.height > 0:
+                target.last_capture_size = (img.width, img.height)
                 if target.rect.width != img.width or target.rect.height != img.height:
                     target.rect = Rect(x=0, y=0, width=img.width, height=img.height)
             return img
-        return self.capturer.capture(target)
+        img = self.capturer.capture(target)
+        if img.width > 0 and img.height > 0:
+            target.last_capture_size = (img.width, img.height)
+        return img
 
     def _execute_cdp_codeact(
         self,
@@ -1138,10 +1140,13 @@ class ChatSession:
             )
 
             # 1. Capture screenshot(s) and build visual observation
+            captured_image_sizes: dict[str, tuple[int, int]] = {}
             if len(self.targets) <= 1:
                 try:
                     img = self._capture_target(self.target)
                     img_b64 = self._encode_image(img)
+                    if img.width > 0 and img.height > 0:
+                        captured_image_sizes[self.target.target_id] = (img.width, img.height)
                 except Exception as e:
                     err_msg = f"Failed to capture target viewport: {e}"
                     self.state = SessionState.ERROR
@@ -1179,6 +1184,8 @@ class ChatSession:
                     try:
                         t_img = self._capture_target(t)
                         last_img = t_img
+                        if t_img.width > 0 and t_img.height > 0:
+                            captured_image_sizes[t.target_id] = (t_img.width, t_img.height)
                         t_b64 = self._encode_image(t_img)
                         obs_content.append(
                             {
@@ -1335,6 +1342,7 @@ class ChatSession:
                             self.target,
                             targets=self.targets,
                             on_switch_target=self._on_engine_switch_target,
+                            image_sizes=captured_image_sizes,
                         )
                     executed_action = True
                     action_success = result.success
@@ -1474,6 +1482,7 @@ class ChatSession:
                             self.target,
                             targets=self.targets,
                             on_switch_target=self._on_engine_switch_target,
+                            image_sizes=captured_image_sizes,
                         )
                     executed_action = True
                     action_success = result.success

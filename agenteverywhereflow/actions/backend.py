@@ -108,17 +108,25 @@ class OSGuiBackend:
             self.capturer.focus(self.target)
 
     def _to_screen(self, x: float, y: float) -> tuple[int, int]:
+        img_w, img_h = self.target.rect.width, self.target.rect.height
+        if self.target.last_capture_size is not None:
+            cw, ch = self.target.last_capture_size
+            if cw > 0 and ch > 0:
+                img_w, img_h = cw, ch
         return CoordinateProjector.to_screen_coords(
             target=self.target,
             x=x,
             y=y,
-            img_width=self.target.rect.width,
-            img_height=self.target.rect.height,
+            img_width=img_w,
+            img_height=img_h,
         )
 
     def capture(self) -> Image.Image:
         """Capture the bound target viewport via the OS capturer."""
-        return self.capturer.capture(self.target)
+        img = self.capturer.capture(self.target)
+        if img.width > 0 and img.height > 0:
+            self.target.last_capture_size = (img.width, img.height)
+        return img
 
     def click(
         self,
@@ -136,8 +144,8 @@ class OSGuiBackend:
             button=button,
             clicks=click_count,
             window_handle=self._window_handle(),
-            window_rel_x=int(x),
-            window_rel_y=int(y),
+            window_rel_x=sx - self.target.rect.x,
+            window_rel_y=sy - self.target.rect.y,
         )
 
     def double_click(self, x: float, y: float) -> None:

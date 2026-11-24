@@ -144,6 +144,7 @@ def _serialize_target(t: TargetInfo) -> dict[str, Any]:
         "title": t.title,
         "native_handle": t.native_handle,
         "process_name": t.process_name,
+        "pid": t.pid,
         "is_minimized": t.is_minimized,
         "rect": {
             "x": t.rect.x,
@@ -155,13 +156,8 @@ def _serialize_target(t: TargetInfo) -> dict[str, Any]:
 
 
 def _mask_api_key(api_key: str) -> str:
-    """Return a safe masked preview of an API key (e.g. ``sk-...1234``)."""
-    key = (api_key or "").strip()
-    if not key:
-        return ""
-    if len(key) <= 8:
-        return "*" * len(key)
-    return f"{key[:3]}...{key[-4:]}"
+    """Return a safe masked preview of an API key."""
+    return cfg_mod.mask_api_key(api_key)
 
 
 def _normalize_mode_str(val: str) -> ExecutionMode:
@@ -348,10 +344,9 @@ def _parse_region_target_id(target_id: str) -> TargetInfo | None:
         return None
     if w <= 0 or h <= 0:
         return None
-    region_type = getattr(TargetType, "REGION", TargetType.DISPLAY)
     return TargetInfo(
         target_id=f"region:{x},{y},{w},{h}",
-        target_type=region_type,
+        target_type=TargetType.REGION,
         title=f"Region ({w}x{h} at {x},{y})",
         process_name="region",
         rect=Rect(x=x, y=y, width=w, height=h),
@@ -936,12 +931,11 @@ def create_app() -> FastAPI:
         # 2. Custom screen crop region target
         elif req.region is not None:
             r = req.region
-            region_type = getattr(TargetType, "REGION", TargetType.DISPLAY)
             region_id = f"region:{r.x},{r.y},{r.width},{r.height}"
             region_title = r.title or f"Region ({r.width}x{r.height} at {r.x},{r.y})"
             region_target = TargetInfo(
                 target_id=region_id,
-                target_type=region_type,
+                target_type=TargetType.REGION,
                 title=region_title,
                 process_name="region",
                 rect=Rect(x=r.x, y=r.y, width=r.width, height=r.height),
@@ -1236,14 +1230,21 @@ def create_app() -> FastAPI:
 
     @app.post("/api/v1/sessions/{session_id}/target")
     def switch_target(session_id: str, req: SwitchTargetRequest) -> dict[str, Any]:
-        """Switch target window or screen for this session."""
+        """Switch target window, screen, or region for this session."""
         session = _resolve_session(session_id)
         if not session:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
 
-        capturer = get_capturer()
-        all_targets = capturer.list_targets()
-        new_target = resolve_target(all_targets, req.target_id)
+        new_target: TargetInfo | None = None
+        bound_targets: list[TargetInfo] = list(getattr(session, "targets", []))
+        if bound_targets:
+            new_target = resolve_target(bound_targets, req.target_id)
+        if new_target is None and req.target_id.strip().lower().startswith("region:"):
+            new_target = _parse_region_target_id(req.target_id.strip())
+        if new_target is None:
+            capturer = get_capturer()
+            all_targets = capturer.list_targets()
+            new_target = resolve_target(all_targets, req.target_id)
         if not new_target:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -1255,6 +1256,7 @@ def create_app() -> FastAPI:
             "status": "ok",
             "target": {
                 "target_id": new_target.target_id,
+                "target_type": new_target.target_type.value,
                 "title": new_target.title,
             },
         }

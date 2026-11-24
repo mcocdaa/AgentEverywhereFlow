@@ -298,7 +298,8 @@ def test_linux_driver_xtest_keys_and_hotkeys() -> None:
 def test_macos_driver_type_text_uses_command_v_and_restores_clipboard(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("agenteverywhereflow.actions.driver.sys.platform", "darwin")
+    driver_mod = importlib.import_module("agenteverywhereflow.actions.driver")
+    monkeypatch.setattr(driver_mod.sys, "platform", "darwin")
     drv = InputDriver()
 
     copied: list[str] = []
@@ -318,7 +319,8 @@ def test_macos_driver_type_text_uses_command_v_and_restores_clipboard(
 
 
 def test_macos_driver_double_click_sets_click_state_2(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("agenteverywhereflow.actions.driver.sys.platform", "darwin")
+    driver_mod = importlib.import_module("agenteverywhereflow.actions.driver")
+    monkeypatch.setattr(driver_mod.sys, "platform", "darwin")
     drv = InputDriver()
 
     click_states: list[int] = []
@@ -342,7 +344,7 @@ def test_macos_driver_double_click_sets_click_state_2(monkeypatch: pytest.Monkey
         CGEventPost=MagicMock(side_effect=lambda tap, evt: posted_events.append((tap, evt))),
     )
 
-    with patch("agenteverywhereflow.actions.driver._get_quartz", return_value=fake_quartz):
+    with patch.object(driver_mod, "_get_quartz", return_value=fake_quartz):
         drv.double_click(x=320, y=240, restore_cursor=False)
 
     # First click sets clickState=1 (down + up), second click sets clickState=2 (down + up)
@@ -351,7 +353,8 @@ def test_macos_driver_double_click_sets_click_state_2(monkeypatch: pytest.Monkey
 
 
 def test_macos_driver_hotkey_normalizes_cmd_to_command(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("agenteverywhereflow.actions.driver.sys.platform", "darwin")
+    driver_mod = importlib.import_module("agenteverywhereflow.actions.driver")
+    monkeypatch.setattr(driver_mod.sys, "platform", "darwin")
     drv = InputDriver()
 
     flags_set: list[int] = []
@@ -364,7 +367,7 @@ def test_macos_driver_hotkey_normalizes_cmd_to_command(monkeypatch: pytest.Monke
         CGEventPost=MagicMock(),
     )
 
-    with patch("agenteverywhereflow.actions.driver._get_quartz", return_value=fake_quartz):
+    with patch.object(driver_mod, "_get_quartz", return_value=fake_quartz):
         drv.hotkey("cmd", "shift", "c")
 
     expected_flags = (1 << 20) | (1 << 17)
@@ -395,7 +398,8 @@ def test_windows_sendinput_struct_construction_and_paste_without_pyautogui(
     assert key_up.ki.dwFlags == KEYEVENTF_KEYUP
 
     # Verify Windows click + Ctrl+V paste work even when PyAutoGUI is unavailable (backend=None)
-    monkeypatch.setattr("agenteverywhereflow.actions.driver.sys.platform", "win32")
+    driver_mod = importlib.import_module("agenteverywhereflow.actions.driver")
+    monkeypatch.setattr(driver_mod.sys, "platform", "win32")
     drv = InputDriver()
     sent_batches: list[list[_INPUT]] = []
     copied: list[str] = []

@@ -203,6 +203,8 @@ class AgentLoop:
 
             # 2. Capture screenshot
             img = self.capturer.capture(target)
+            if img.width > 0 and img.height > 0:
+                target.last_capture_size = (img.width, img.height)
             img_b64 = self._encode_image(img)
 
             # Add screenshot to current observation message
@@ -297,7 +299,7 @@ class AgentLoop:
                     import time
 
                     start_t = time.time()
-                    result = engine.execute(code_to_exec, target)
+                    result = engine.execute(code_to_exec, target, img_size=(img.width, img.height))
                     elapsed = time.time() - start_t
                     executed_action = True
                     action_success = result.success
@@ -354,7 +356,7 @@ class AgentLoop:
                         import time
 
                         start_t = time.time()
-                        result = engine.execute(payload, target)
+                        result = engine.execute(payload, target, img_size=(img.width, img.height))
                         elapsed = time.time() - start_t
                         executed_action = True
                         action_success = result.success

@@ -318,7 +318,7 @@ def test_config_get_and_patch_masking_and_persistence(
         assert r_patch.status_code == 200
         p = r_patch.json()
         assert p["api_key_set"] is True
-        assert p["api_key_preview"] == "sk-...1234"
+        assert p["api_key_preview"] == "sk-pro...1234"
         assert "secret" not in p["api_key_preview"]
         assert p["model_name"] == "gpt-4o"
         assert p["base_url"] == "https://api.openai.com/v1"
