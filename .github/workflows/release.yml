@@ -87,11 +87,13 @@ jobs:
   publish-pypi:
     name: Publish to PyPI (Trusted Publishing)
     needs: build-and-test
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') && vars.ENABLE_PYPI_PUBLISH == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       id-token: write
+    environment:
+      name: pypi
     steps:
       - name: Download built distributions
         uses: actions/download-artifact@v8
